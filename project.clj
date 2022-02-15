@@ -4,7 +4,11 @@
                  ;; structure
                  [com.stuartsierra/component "1.0.0" :scope "provided"]
                  ;; logging
-                 [com.taoensso/timbre "5.1.2" :scope "provided"]]
+                 [com.taoensso/timbre "5.1.2" :scope "provided"]
+
+                 ;; MQTT library
+                 [songpark/mqtt "1.0.0-alpha1"]
+                 ]
 
   :repl-options {:init-ns songpark.jam.tpx}
 
