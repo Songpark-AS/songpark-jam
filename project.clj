@@ -8,7 +8,9 @@
 
                  ;; MQTT library
                  [songpark/mqtt "1.0.0-alpha1"]
-                 ]
+
+                 ;; core async. used for TPX IPC/Jam bindings
+                 [org.clojure/core.async "1.5.648"]]
 
   :repl-options {:init-ns songpark.jam.tpx}
 
