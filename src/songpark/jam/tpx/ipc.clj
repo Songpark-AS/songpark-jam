@@ -1,4 +1,5 @@
 (ns songpark.jam.tpx.ipc
+  "Used soley for development and debugging logic. A new implementation is needed for the real TPX meant to be running on the TP"
   (:require [clojure.core.async :as async]
             [com.stuartsierra.component :as component]
             [taoensso.timbre :as log]))
@@ -9,19 +10,25 @@
 
 (defn command*
   "Used only for testing purposes. This is for manipulating the TPX jam"
-  [{:keys [values] :as _ipc} what data]
+  [{:keys [values history] :as _ipc} what data]
+  (swap! history conj [what data])
   (swap! values assoc what data))
 
 (defn handler*
   "Used only for testing purposes. This is for manipulating the TPX jam. Use command first in order to set the desired value"
   [{:keys [values c] :as _ipc} what]
-  (Thread/sleep 100)
+  (Thread/sleep (+ 50 (rand-int 200)))
   (async/put! c {:value (get @values what)
-                 :context-map? true
                  :testing? true
                  :what what}))
 
-(defrecord IPC [started? c values command-fn handler-fn]
+(defn reset-history! [ipc]
+  (reset! (:history ipc) []))
+
+(defn get-history [ipc]
+  (or @(:history ipc) []))
+
+(defrecord IPC [started? c values command-fn handler-fn history]
   component/Lifecycle
   (start [this]
     (if started?
@@ -29,6 +36,7 @@
       (do (log/info "Starting IPC tester")
           (assoc this
                  :started? true
+                 :history (atom [])
                  :c (async/chan (async/sliding-buffer 10))))))
   (stop [this]
     (if-not started?
@@ -36,6 +44,7 @@
       (do (log/info "Stopping IPC tester")
           (async/close! c)
           (assoc this
+                 :history nil
                  :started? false
                  :c nil))))
   IIPC

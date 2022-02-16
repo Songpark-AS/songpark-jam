@@ -26,16 +26,32 @@
 (deftest tpx-jam
   (let [client (atom nil)
         tp-id "tpx1"
+        tps ["tpx1" "tpx2"]
+        sips {"tpx1" "tpx1@voip1.inonit.no"
+              "tpx2" "tpx2@void1.inonit.no"}
         _ (reset! client (init-client tp-id))
         ipc (component/start (tpx.ipc/get-ipc {}))
         jam (component/start (jam.tpx/get-jam {:tp-id tp-id
                                                :ipc ipc
-                                               :mqtt-client @client}))]
+                                               :mqtt-client @client
+                                               :saved-values (atom {:volume/global-volume 20
+                                                                    :volume/local-volume 15
+                                                                    :volume/network-volume 10
+                                                                    :jam/playout-delay 10})}))
+        jam-data {:jam/sip sips
+                  :jam/members tps
+                  :jam/id "myjam"}]
 
-    (tpx.ipc/command ipc :sip/call "tpx2")
-    (tpx.ipc/handler ipc :sip/call)
 
-    (Thread/sleep 100)
+    (do (tpx.ipc/reset-history! ipc)
+        (jam.tpx/join jam jam-data)
+        (is (= (tpx.ipc/get-history ipc) [[:sip/call "tpx2@void1.inonit.no"]])))
+
+    (do (tpx.ipc/reset-history! ipc)
+        (jam.tpx/join jam jam-data)
+        (jam.tpx/leave jam)
+        (is (= (tpx.ipc/get-history ipc) [[:sip/call "tpx2@void1.inonit.no"]
+                                          [:sip/hangup "tpx2@void1.inonit.no"]])))
     
     (component/stop jam)
     (component/stop ipc)

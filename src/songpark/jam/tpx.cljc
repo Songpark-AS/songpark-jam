@@ -19,28 +19,30 @@
                                       nil))
                                   nil indexed-join-order)
         sips-in-order (map #(get sips %) join-order)
-        [_ sips] (split-at (inc starting-position) sips-in-order)]
+        [_ sips] (if-not (empty? sips-in-order)
+                   (split-at (inc starting-position) sips-in-order)
+                   [nil []])]
     sips))
 
-(defn jam-join [tp-id ipc join-order]
+(defn- jam-join [tp-id ipc join-order]
   (log/debug :jam-join {:join-order join-order})
   (doseq [sip join-order]
     (tpx.ipc/command ipc :sip/call sip)))
 
-(defn jam-leave [tp-id ipc leave-order]
+(defn- jam-leave [tp-id ipc leave-order]
   (log/debug :jam-leave {:leave-order leave-order})
   (doseq [sip leave-order]
     (tpx.ipc/command ipc :sip/hangup sip)))
 
 
-(defn join* [{:keys [tp-id data mqtt-client ipc] :as _jam} jam-data]
+(defn- join* [{:keys [tp-id data mqtt-client ipc] :as _jam} jam-data]
   (swap! data assoc :jam/data jam-data)
   (let [topics (jam.util/get-jam-topic-subscriptions jam-data)
         join-order (get-call-order tp-id (:jam/members jam-data) (:jam/sip jam-data))]
     (mqtt/subscribe mqtt-client topics)
     (jam-join tp-id ipc join-order)))
 
-(defn leave* [{:keys [data tp-id mqtt-client ipc] :as _jam}]
+(defn- leave* [{:keys [data tp-id mqtt-client ipc] :as _jam}]
   (let [jam-data (:jam/data @data)
         topic (jam.util/get-jam-topic-jam jam-data)
         topics (jam.util/get-jam-topic-subscriptions jam-data)
@@ -48,14 +50,58 @@
     (mqtt/publish mqtt-client topic {:message/type :jam.teleporter/leaving
                                      :teleporter/id tp-id})
     (jam-leave tp-id ipc leave-order)
-    (mqtt/unsubscribe mqtt-client topics)))
+    (mqtt/unsubscribe mqtt-client (keys topics))))
 
-(defn get-state* [jam])
+(defn- get-state* [jam]
+  (-> jam :data deref :state))
 
-(defn handle-ipc-value [jam v]
-  (log/debug :handle-ipc-value v))
+(defn- set-state [{:keys [data] :as _jam} value]
+  (swap! data assoc :state value))
 
-(defn handle-ipc [{:keys [ipc] :as jam}]
+(defn- idle? [jam]
+  (= :idle (get-state jam)))
+
+(defn- jamming? [jam]
+  (= :jamming (get-state jam)))
+
+(defn- update-saved-values [{:keys [saved-values] :as _jam} what value]
+  (swap! saved-values assoc what value))
+
+(defn- broadcast-to-jam [{:keys [mqtt-client data] :as _jam} data]
+  (let [topic (jam.util/get-jam-topic-jam (:jam/data @data))]
+    (mqtt/publish mqtt-client topic data)))
+
+(defn- handle-ipc-value [{:keys [data tp-id] :as jam}
+                         {:keys [event/type event/value] :as v}]
+  (log/debug :handle-ipc-value v)
+  (case type
+    :volume/global-volume (do
+                            (update-saved-values jam type value)
+                            (if (jamming? jam)
+                              (broadcast-to-jam jam {:message/type type
+                                                     type value
+                                                     :teleporter/id tp-id})))
+    :volume/local-volume (do
+                           (update-saved-values jam type value)
+                           (if (jamming? jam)
+                             (broadcast-to-jam jam {:message/type type
+                                                    type value
+                                                    :teleporter/id tp-id})))
+    :volume/network-volume (do
+                             (update-saved-values jam type value)
+                             (if (jamming? jam)
+                               (broadcast-to-jam jam {:message/type type
+                                                      type value
+                                                      :teleporter/id tp-id})))
+    :jam/playout-delay (do
+                         (update-saved-values jam type value)
+                         (if (jamming? jam)
+                           (broadcast-to-jam jam {:message/type type
+                                                  type value
+                                                  :teleporter/id tp-id})))
+    (log/error "Event type" v "not handled" v)))
+
+(defn- handle-ipc [{:keys [ipc] :as jam}]
   (let [c (:c ipc)
         closer (async/chan)]
     (async/go-loop []
@@ -108,4 +154,5 @@
     (get-state* this)))
 
 (defn get-jam [settings]
-  (map->Jam settings))
+  (map->Jam (merge {:saved-values (atom {})}
+                   settings)))
