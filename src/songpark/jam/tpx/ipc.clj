@@ -18,9 +18,9 @@
   "Used only for testing purposes. This is for manipulating the TPX jam. Use command first in order to set the desired value"
   [{:keys [values c] :as _ipc} what]
   (Thread/sleep (+ 50 (rand-int 200)))
-  (async/put! c {:value (get @values what)
+  (async/put! c {:event/value (get @values what)
                  :testing? true
-                 :what what}))
+                 :event/type what}))
 
 (defn reset-history! [ipc]
   (reset! (:history ipc) []))
