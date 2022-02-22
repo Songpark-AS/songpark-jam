@@ -116,21 +116,29 @@
                          {:keys [event/type event/value] :as v}]
   (log/debug :handle-ipc-value v)
   (case type
+    ;; volumes are messed up because of how the CLI interface
+    ;; of the bridge program works. You are always printed a table
+    ;; with all the values, regardless of what you asked for. As such,
+    ;; you will have race conditions where you cannot know which is which,
+    ;; and therefore it's better to just send all the volumes
     :volume/global-volume
     (do
       (update-saved-values jam type value)
-      (if (jamming? jam)
-        (broadcast-to-jam jam {:message/type type
-                               type value
-                               :teleporter/id tp-id})))
+      (broadcast-to-jam jam {:message/type :teleporter/volumes
+                             type value
+                             :teleporter/id tp-id}))
     :volume/local-volume
     (do
       (update-saved-values jam type value)
-      (broadcast-jam-status jam))
+      (broadcast-to-jam jam {:message/type :teleporter/volumes
+                             type value
+                             :teleporter/id tp-id}))
     :volume/network-volume
     (do
       (update-saved-values jam type value)
-      (broadcast-jam-status jam))
+      (broadcast-to-jam jam {:message/type :teleporter/volumes
+                             type value
+                             :teleporter/id tp-id}))
     :jam/playout-delay
     (do
       (update-saved-values jam type value)
