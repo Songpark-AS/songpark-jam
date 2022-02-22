@@ -7,7 +7,7 @@
                  [com.taoensso/timbre "5.1.2" :scope "provided"]
 
                  ;; MQTT library
-                 [songpark/mqtt "1.0.0-alpha4"]
+                 [songpark/mqtt "1.0.0-alpha6" :scope "provided"]
 
                  ;; core async. used for TPX IPC/Jam bindings
                  [org.clojure/core.async "1.5.648"]]

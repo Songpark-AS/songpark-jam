@@ -6,7 +6,7 @@
 
 (defprotocol IIPC
   (command [this what data])
-  (handler [this what]))
+  (handler [this what] [this what data] "Used for handling data coming out of IPC. First one is meant for debugging. Second is meant for real world usage."))
 
 (defn command*
   "Used only for testing purposes. This is for manipulating the TPX jam"
@@ -51,7 +51,10 @@
   (command [this what value]
     (command-fn this what value))
   (handler [this what]
-    (handler-fn this what)))
+    (handler-fn this what))
+  (handler [this what data]
+    (throw (ex-info "Not implemented" {:what what
+                                       :data data}))))
 
 (defn get-ipc [settings]
   (map->IPC (merge {:command-fn command*
