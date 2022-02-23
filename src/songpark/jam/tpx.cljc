@@ -73,7 +73,7 @@
   ([{:keys [data] :as _jam} status]
    (swap! data assoc :jam/status status)))
 
-(defn- idle? [jam]
+(defn idle? [jam]
   (= :idle (get-state jam)))
 
 (defn jamming? [jam]
@@ -88,9 +88,6 @@
      :stream/sync-failed
      :stream/streaming
      :stream/stopped} (get-state jam)))
-
-(defn- update-saved-values [{:keys [saved-values] :as _jam} what value]
-  (swap! saved-values assoc what value))
 
 (defn- broadcast-to-jam [{:keys [mqtt-client data] :as _jam} data]
   (let [jam-data @data
@@ -122,27 +119,19 @@
     ;; you will have race conditions where you cannot know which is which,
     ;; and therefore it's better to just send all the volumes
     :volume/global-volume
-    (do
-      (update-saved-values jam type value)
-      (broadcast-to-jam jam {:message/type :teleporter/volumes
-                             type value
-                             :teleporter/id tp-id}))
+    (broadcast-to-jam jam {:message/type :teleporter/volumes
+                           :teleporter/volumes value
+                           :teleporter/id tp-id})
     :volume/local-volume
-    (do
-      (update-saved-values jam type value)
-      (broadcast-to-jam jam {:message/type :teleporter/volumes
-                             type value
-                             :teleporter/id tp-id}))
+    (broadcast-to-jam jam {:message/type :teleporter/volumes
+                           :teleporter/volumes value
+                           :teleporter/id tp-id})
     :volume/network-volume
-    (do
-      (update-saved-values jam type value)
-      (broadcast-to-jam jam {:message/type :teleporter/volumes
-                             type value
-                             :teleporter/id tp-id}))
+    (broadcast-to-jam jam {:message/type :teleporter/volumes
+                           :teleporter/volumes value
+                           :teleporter/id tp-id})
     :jam/playout-delay
-    (do
-      (update-saved-values jam type value)
-      (broadcast-jam-status jam))
+    (broadcast-jam-status jam)
 
     :sip/making-call
     (do
@@ -238,7 +227,7 @@
             (recur)))))
     closer))
 
-(defrecord Jam [started? tp-id data mqtt-client ipc saved-values closer-chan]
+(defrecord Jam [started? tp-id data mqtt-client ipc closer-chan]
   component/Lifecycle
   (start [this]
     (if started?
@@ -273,5 +262,4 @@
     (get-state* this)))
 
 (defn get-jam [settings]
-  (map->Jam (merge {:saved-values (atom {})}
-                   settings)))
+  (map->Jam settings))
