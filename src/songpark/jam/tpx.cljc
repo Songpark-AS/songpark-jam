@@ -39,12 +39,14 @@
 
 (defn- jam-leave [ipc leave-order]
   (log/debug :jam-leave {:leave-order leave-order})
+  (tpx.ipc/command ipc :jam/stop-coredump true)
   (doseq [sip leave-order]
     (tpx.ipc/command ipc :sip/hangup sip)))
 
 
 (defn- join* [{:keys [tp-id data mqtt-client ipc] :as jam} jam-data]
   (reset! data (mqtt/clean-message mqtt-client jam-data))
+  (set-state jam :jam/joined)
   (let [topics (jam.util/get-jam-topic-subscriptions :platform jam-data)
         join-order (get-call-order tp-id (:jam/members jam-data) (:jam/sip jam-data))]
     (mqtt/subscribe mqtt-client topics)
@@ -83,7 +85,6 @@
      :sip/calling
      :sip/incoming-call
      :sip/hangup
-     :stream/connecting
      :stream/syncing
      :stream/sync-failed
      :stream/streaming
@@ -163,13 +164,6 @@
           (update-jam-teleporter jam other-tp-id :sip type)
           (broadcast-jam-status jam))))
 
-    :stream/connecting
-    (do
-      (set-state jam type)
-      (if (jamming? jam)
-        (let [other-tp-id (get-other-teleporter-id jam)]
-          (update-jam-teleporter jam other-tp-id :stream type)
-          (broadcast-jam-status jam))))
     :stream/syncing
     (do
       (set-state jam type)
@@ -240,7 +234,7 @@
                                              ;; data about the jam
                                              :#jam {:id #uuid "00000000-0000-0000-0000-000000000000"
                                                     :teleporters {:tp-id-other-or-own {:sip #{:sip/call :sip/in-call :sip/hungup}
-                                                                                       :stream #{:stream/connecting :stream/syncing :stream/sync-failed :stream/streaming}}}}}))
+                                                                                       :stream #{:stream/syncing :stream/sync-failed :stream/streaming}}}}}))
                 closer-chan (handle-ipc new-this)]
             (clear-jam-teleporters new-this)
             (set-state new-this :idle)
