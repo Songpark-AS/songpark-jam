@@ -45,7 +45,7 @@
 
 
 (defn- join* [{:keys [tp-id data mqtt-client ipc] :as jam} jam-data]
-  (reset! data (mqtt/clean-message mqtt-client jam-data))
+  (reset! data (select-keys jam-data [:jam/sip :jam/members :jam/id]))
   (set-state jam :jam/joined)
   (let [topics (jam.util/get-jam-topic-subscriptions :platform jam-data)
         join-order (get-call-order tp-id (:jam/members jam-data) (:jam/sip jam-data))]
@@ -163,7 +163,6 @@
         (let [other-tp-id (get-other-teleporter-id jam)]
           (update-jam-teleporter jam other-tp-id :sip type)
           (broadcast-jam-status jam))))
-
     :stream/syncing
     (do
       (set-state jam type)
