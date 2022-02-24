@@ -44,7 +44,7 @@
 
 
 (defn- join* [{:keys [tp-id data mqtt-client ipc] :as jam} jam-data]
-  (reset! data jam-data)
+  (reset! data (mqtt/clean-message mqtt-client jam-data))
   (let [topics (jam.util/get-jam-topic-subscriptions :platform jam-data)
         join-order (get-call-order tp-id (:jam/members jam-data) (:jam/sip jam-data))]
     (mqtt/subscribe mqtt-client topics)
@@ -222,6 +222,7 @@
                (handle-ipc-value jam v)
                (catch Exception e
                  (log/error "Caught exception in handle-ipc" {:exception e
+                                                              :v v
                                                               :data (ex-data e)
                                                               :message (ex-message e)}))))
             (recur)))))
