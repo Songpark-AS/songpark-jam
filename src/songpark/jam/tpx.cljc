@@ -94,7 +94,7 @@
   (= state (get-state jam)))
 
 (defn states? [jam states]
-  ((set state) (get-state jam)))
+  ((set states) (get-state jam)))
 
 (defn- broadcast-to-jam [{:keys [mqtt-client data] :as _jam} data]
   (let [jam-data @data
