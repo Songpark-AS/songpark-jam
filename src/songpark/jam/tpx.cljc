@@ -47,7 +47,7 @@
 (defn- join* [{:keys [tp-id data mqtt-client ipc] :as jam} jam-data]
   (reset! data (select-keys jam-data [:jam/sip :jam/members :jam/id]))
   (set-state jam :jam/joined)
-  (let [topics (jam.util/get-jam-topic-subscriptions :platform jam-data)
+  (let [topics (jam.util/get-jam-topic-subscriptions :teleporter jam-data)
         join-order (get-call-order tp-id (:jam/members jam-data) (:jam/sip jam-data))]
     (mqtt/subscribe mqtt-client topics)
     (jam-join ipc join-order)))
@@ -55,7 +55,7 @@
 (defn- leave* [{:keys [data tp-id mqtt-client ipc] :as jam}]
   (let [jam-data @data
         topic (jam.util/get-jam-topic :jam jam-data)
-        topics (jam.util/get-jam-topic-subscriptions :platform jam-data)
+        topics (jam.util/get-jam-topic-subscriptions :teleporter jam-data)
         leave-order (get-call-order tp-id (:jam/members jam-data) (:jam/sip jam-data))]
     (mqtt/publish mqtt-client topic {:message/type :jam.teleporter/leaving
                                      :teleporter/id tp-id})

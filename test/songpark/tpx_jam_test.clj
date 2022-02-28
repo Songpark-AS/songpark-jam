@@ -1,31 +1,16 @@
-
 (ns songpark.tpx-jam-test
   (:require [clojure.test :refer :all]
+            [com.stuartsierra.component :as component]
             [songpark.jam.tpx :as jam.tpx]
             [songpark.jam.tpx.ipc :as tpx.ipc]
-            [com.stuartsierra.component :as component]
-            [songpark.mqtt :as mqtt]))
+            [songpark.util-test :refer [get-config
+                                        start
+                                        stop
+                                        init-client
+                                        sleep]]))
 
 
-(defn get-config []
-  {:config {:host "127.0.0.1"
-            :scheme "tcp"
-            :port 1883
-            :connect-options {:auto-reconnect true}}})
 
-(defn start [config]
-  (component/start (mqtt/mqtt-client config)))
-
-(defn stop [mqtt-client]
-  (component/stop mqtt-client))
-
-(defn init-client [client-id]
-  (start (assoc-in (get-config)
-                   [:config :id] client-id)))
-
-(defn sleep
-  ([] (sleep 1000))
-  ([ms] (Thread/sleep ms)))
 
 (defn fake-command [ipc what data]
   (tpx.ipc/command ipc what data)
@@ -63,6 +48,7 @@
           (jam.tpx/join jam jam-data)
           (jam.tpx/leave jam)
           (is (= (tpx.ipc/get-history ipc) [[:sip/call "tpx2@void1.inonit.no"]
+                                            [:jam/stop-coredump true]
                                             [:sip/hangup "tpx2@void1.inonit.no"]]))))
 
     (testing "Full call"
@@ -82,6 +68,7 @@
                                             [:stream/connecting 0]
                                             [:stream/syncing 0]
                                             [:stream/streaming 0]
+                                            [:jam/stop-coredump true]
                                             [:sip/hangup "tpx2@void1.inonit.no"]]))))
 
     (testing "Incoming call"
@@ -99,6 +86,7 @@
                                             [:stream/connecting 0]
                                             [:stream/syncing 0]
                                             [:stream/streaming 0]
+                                            [:jam/stop-coredump true]
                                             [:sip/hangup "tpx2@void1.inonit.no"]]))))
 
 

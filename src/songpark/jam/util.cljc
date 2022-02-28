@@ -1,5 +1,9 @@
 (ns songpark.jam.util)
 
+(defn get-id []
+  #?(:clj  (java.util.UUID/randomUUID)
+     :cljs (random-uuid)))
+
 (defn get-jam-topic-subscriptions
   "Get the subscriptions for a jam"
   [environment {:keys [jam/id] :as _jam-data}]
