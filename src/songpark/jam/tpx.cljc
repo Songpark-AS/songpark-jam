@@ -98,7 +98,7 @@
 
 (defn- broadcast-to-jam [{:keys [mqtt-client data] :as _jam} data]
   (let [jam-data @data
-        topic (jam.util/get-jam-topic :teleporters/app jam-data)]
+        topic (jam.util/get-jam-topic :app jam-data)]
     (mqtt/publish mqtt-client topic jam-data)))
 
 (defn- get-other-teleporter-id [{:keys [tp-id data] :as _jam}]
