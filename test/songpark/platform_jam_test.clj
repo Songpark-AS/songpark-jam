@@ -28,7 +28,7 @@
                             :teleporter/sip "tp3@voip1.inonit.no"}
                      "tp4" {:teleporter/id "tp4"
                             :teleporter/sip "tp4@voip1.inonit.no"}}]
-    (proto/write-db db [:teleporters] teleporters)
+    (proto/write-db db [:teleporter] teleporters)
     (proto/write-db db [:jam] {})
 
     (testing "ask"

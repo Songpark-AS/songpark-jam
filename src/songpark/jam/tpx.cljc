@@ -109,11 +109,12 @@
     (first $)))
 
 (defn- broadcast-jam-status [{:keys [data tp-id] :as jam}]
-  (if (jamming? jam)
-    (broadcast-to-jam jam (merge (select-keys @data [:jam/teleporters])
-                                 {:message/type :jam.teleporter/status
-                                  :teleporter/id tp-id}))
-    (log/error "Trying to broadcast to a jam when not in a jam")))
+  (let [msg (merge (select-keys @data [:jam/teleporters])
+                   {:message/type :jam.teleporter/status
+                    :teleporter/id tp-id})]
+    (broadcast-to-jam jam msg)
+    (when-not (jamming? jam)
+      (log/error "Trying to broadcast to a jam when not in a jam" msg))))
 
 (defn- handle-ipc-value [{:keys [data tp-id mqtt-client] :as jam}
                          {:keys [event/type event/value] :as v}]
@@ -157,7 +158,12 @@
       (let [other-tp-id (get-other-teleporter-id jam)]
         (update-jam-teleporter jam other-tp-id :sip type)
         (broadcast-jam-status jam)))
-
+    :sip/error
+    (do
+      (set-state jam type)
+      (let [other-tp-id (get-other-teleporter-id jam)]
+        (update-jam-teleporter jam other-tp-id :sip type)
+        (broadcast-jam-status jam)))
     :sip/in-call
     (do
       (set-state jam type)

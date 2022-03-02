@@ -63,7 +63,7 @@
   (let [[tp-id-2 _] (first waiting)
         jam-id (get-id)
         members (get-start-order [tp-id-1 tp-id-2])
-        teleporters (proto/read-db db [:teleporters])
+        teleporters (proto/read-db db [:teleporter])
         jam {:jam/id jam-id
              :jam/sip (get-sips teleporters members)
              :jam/members members}]
@@ -79,7 +79,7 @@
     (mqtt/publish mqtt-client "jam" (assoc jam :message/type :jam/started))))
 
 (defn- ask* [{:keys [db mqtt-client]} tp-id]
-  (let [jams (proto/read-db db [:jams])
+  (let [jams (proto/read-db db [:jam])
         waiting (proto/read-db db [:waiting])
         jamming? (->> jams
                       (filter (fn [[jam-id {:keys [jam/members]}]]
@@ -105,9 +105,13 @@
         msg {:message/type :jam.cmd/stop
              :jam/id jam-id}
         topic (get-jam-topic :jam jam-id)]
+    (doseq [id members]
+      (let [topic (teleporter-topic id)]
+        (mqtt/publish mqtt-client topic msg)))
     (mqtt/publish mqtt-client topic msg)
     (proto/delete-db db [:jam jam-id])
     (mqtt/publish mqtt-client "jam" {:message/type :jam/stopped
+                                     :jam/members members
                                      :jam/id jam-id})))
 
 (defn- obviate* [{:keys [db mqtt-client]} tp-id]
