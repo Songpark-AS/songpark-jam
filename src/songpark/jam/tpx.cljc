@@ -163,6 +163,7 @@
       (set-state jam type)
       (let [other-tp-id (get-other-teleporter-id jam)]
         (update-jam-teleporter jam other-tp-id :sip type)
+        (update-jam-teleporter jam other-tp-id type value)
         (broadcast-jam-status jam)))
     :sip/in-call
     (do
