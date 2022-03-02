@@ -34,8 +34,11 @@
   (write-db [_ key-path value] (swap! kv-map assoc-in key-path value))
   (delete-db [_ key-path] (swap! kv-map dissoc-in key-path)))
 
-(defn mem-db []
-  (map->MemDB {:kv-map (atom {})}))
+(defn mem-db
+  ([]
+   (map->MemDB {:kv-map (atom {})}))
+  ([data]
+   (map->MemDB {:kv-map (atom data)})))
 
 (defn- get-sips [teleporters members]
   (let [members (set members)]
@@ -73,7 +76,7 @@
       (doseq [id members]
         (let [topic (teleporter-topic id)]
           (mqtt/publish mqtt-client topic msg))))
-    (mqtt/publish mqtt-client "jam" (assoc jam :message/type :jam/info))))
+    (mqtt/publish mqtt-client "jam" (assoc jam :message/type :jam/started))))
 
 (defn- ask* [{:keys [db mqtt-client]} tp-id]
   (let [jams (proto/read-db db [:jams])
@@ -113,7 +116,6 @@
                                    :teleporter/id tp-id}))
 
 (defn- check-for-timeouts* [{:keys [db mqtt-client timeout-ms]}]
-  (println timeout-ms)
   (let [waiting (proto/read-db db [:waiting])
         now (t/now)
         timed-out (->> waiting

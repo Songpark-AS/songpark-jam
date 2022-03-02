@@ -6,33 +6,37 @@
 
 (defn get-jam-topic-subscriptions
   "Get the subscriptions for a jam"
-  [environment {:keys [jam/id] :as _jam-data}]
+  [environment {jam-id :jam/id} & [teleporter-id]]
   (case environment
+
     :teleporter
-    {(str id "/jam") 0}
-    
-    :platform
-    {(str id "/jam") 0
-     (str id "/teleporters/platform") 0}
+    (do (assert (some? teleporter-id) "Missing teleporter-id]")
+        {(str jam-id "/jam/teleporter/" teleporter-id) 0})
     
     :app
-    {(str id "/jam") 0
-     (str id "/teleporters/app") 0}
+    {(str jam-id "/jam") 0
+     (str jam-id "/jam/app") 0}
     
-    (throw (ex-info "No supported environment was found. Supported environments are :teleporter, :platform and :app" {:environment environment}))))
+    (throw (ex-info "No supported environment was found. Supported environments are :teleporter and :app" {:environment environment}))))
 
 (defn get-jam-topic
   "Used togeter with what and the jam-data to get the topic to publish to"
-  [what {:keys [jam/id] :as _jam-data}]
+  [what {jam-id :jam/id} & [teleporter-id]]
   (case what
-    :teleporters/app
-    (str id "/teleporters/app")
+    ;; send to any app that is listening in on the jam
+    ;; teleporters are the ones using this topic
+    :app
+    (str jam-id "/jam/app")
 
+    ;; topic directly to a teleporter that is in a jam
+    :teleporter
+    (do (assert (some? teleporter-id) "Missing teleporter-id")
+        (str jam-id "/jam/teleporter/" teleporter-id))
+
+    ;; the general jam info. platform and teleporters send on this
     :jam
-    (str id "/jam")
-
-    :teleporters/platform
-    (str id "/teleporters/platform")
+    (str jam-id "/jam")
     
     (throw (ex-info "No supported topic found" {:what what
-                                                :jam/id id}))))
+                                                :jam/id jam-id
+                                                :teleporter/id teleporter-id}))))
