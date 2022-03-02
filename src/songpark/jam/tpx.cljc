@@ -96,10 +96,9 @@
 (defn states? [jam states]
   ((set states) (get-state jam)))
 
-(defn- broadcast-to-jam [{:keys [mqtt-client data] :as _jam} data]
-  (let [jam-data @data
-        topic (jam.util/get-jam-topic :app jam-data)]
-    (mqtt/publish mqtt-client topic jam-data)))
+(defn- broadcast-to-jam [{:keys [mqtt-client data] :as _jam} msg]
+  (let [topic (jam.util/get-jam-topic :jam @data)]
+    (mqtt/publish mqtt-client topic msg)))
 
 (defn- get-other-teleporter-id [{:keys [tp-id data] :as _jam}]
   (as-> data $
