@@ -9,6 +9,9 @@
   [environment {jam-id :jam/id} & [teleporter-id]]
   (case environment
 
+    :platform
+    {(str jam-id "/jam/platform") 0}
+
     :teleporter
     (do (assert (some? teleporter-id) "Missing teleporter-id]")
         {(str jam-id "/jam/teleporter/" teleporter-id) 0})
@@ -27,6 +30,9 @@
     ;; teleporters are the ones using this topic
     :app
     (str jam-id "/jam/app")
+
+    :platform
+    (str jam-id "/jam/platform")
 
     ;; topic directly to a teleporter that is in a jam
     :teleporter

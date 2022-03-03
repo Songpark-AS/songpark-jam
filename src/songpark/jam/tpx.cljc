@@ -85,6 +85,7 @@
      :sip/calling
      :sip/incoming-call
      :sip/hangup
+     :sip/call-ended
      :stream/syncing
      :stream/sync-failed
      :stream/streaming
@@ -115,6 +116,19 @@
     (broadcast-to-jam jam msg)
     (when-not (jamming? jam)
       (log/error "Trying to broadcast to a jam when not in a jam" msg))))
+
+(defn- platform-left [{:keys [mqtt-client tp-id] :as jam} status]
+  (let [msg (case status
+              :sip/call-ended
+              {:message/type :jam.teleporter/left
+               :jam.teleporter.status/sip :sip/call-ended
+               :teleporter/id tp-id}
+              :stream/stopped
+              {:message/type :jam.teleporter/left
+               :jam.teleporter.status/stream :stream/stopped
+               :teleporter/id tp-id})
+        topic (jam.util/get-jam-topic :platform jam)]
+    (mqtt/publish mqtt-client topic msg)))
 
 (defn- handle-ipc-value
   "Handles outgoing IPC values only. Commands are handled seperately"
@@ -159,7 +173,9 @@
       (set-state jam type)
       (let [other-tp-id (get-other-teleporter-id jam)]
         (update-jam-teleporter jam other-tp-id :sip type)
-        (broadcast-jam-status jam)))
+        (broadcast-jam-status jam)
+        ;; inform the platform that the TP has left the jam on the SIP front
+        (platform-left jam type)))
     :stream/syncing
     (do
       (set-state jam type)
@@ -183,7 +199,9 @@
       (set-state jam type)
       (let [other-tp-id (get-other-teleporter-id jam)]
         (update-jam-teleporter jam other-tp-id :stream type)
-        (broadcast-jam-status jam)))
+        (broadcast-jam-status jam)
+        ;; inform the platform that the TP has left the jam on the streaming front
+        (platform-left jam type)))
     
     :sip/register
     (mqtt/broadcast mqtt-client {:message/type type

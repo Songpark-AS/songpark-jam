@@ -2,7 +2,8 @@
   (:require [com.stuartsierra.component :as component]
             [songpark.jam.platform.protocol :as proto]
             [songpark.jam.util :refer [get-id
-                                       get-jam-topic]]
+                                       get-jam-topic
+                                       get-jam-topic-subscriptions]]
             [songpark.mqtt :as mqtt]
             [songpark.mqtt.util :refer [teleporter-topic]]
             [taoensso.timbre :as log]
@@ -78,6 +79,7 @@
       (doseq [id members]
         (let [topic (teleporter-topic id)]
           (mqtt/publish mqtt-client topic msg))))
+    (mqtt/subscribe mqtt-client (get-jam-topic-subscriptions :platform {:jam/id jam-id}))
     (mqtt/publish mqtt-client "jam" (assoc jam :message/type :jam/started))))
 
 (defn- ask* [{:keys [db mqtt-client]} tp-id]
@@ -119,25 +121,44 @@
   (mqtt/publish mqtt-client "jam" {:message/type :jam/obviated
                                    :teleporter/id tp-id}))
 
-(defn- left* [{:keys [db mqtt-client]} jam-id {:teleporter/keys [id sip stream]}]
+(defn- left* [{:keys [db mqtt-client]} jam-id {:teleporter/keys [id]
+                                               :jam.teleporter.status/keys [sip stream]}]
   (let [{:jam/keys [members call-ended stream-stopped]} (proto/read-db db [:jam jam-id])
         members (set members)
         call-ended (set call-ended)
         stream-stopped (set stream-stopped)]
-    (cond
-      (= members call-ended stream-stopped)
-      ;; publish end of jam
-      (mqtt/publish mqtt-client "jam" {:message/type :jam/stopped
-                                       :jam/members members
-                                       :jam/id jam-id})
-      (not (call-ended id))
-      (proto/write-db db [:jam jam-id :jam/call-ended] (conj call-ended id))
+    (if (or (= sip :sip/call-ended)
+            (= stream :stream/stopped))
+      (do
+        (cond
+         (not (call-ended id))
+         (proto/write-db db [:jam jam-id :jam/call-ended] (conj call-ended id))
 
-      (not (stream-stopped id))
-      (proto/write-db db [:jam jam-id :jam/stream-stopped] (conj stream-stopped id))
+         (not (stream-stopped id))
+         (proto/write-db db [:jam jam-id :jam/stream-stopped] (conj stream-stopped id))
 
-      :else
-      nil)))
+         :else
+         (log/warn "Hitting the end of a cond that should not be hit" {:sip sip
+                                                                       :stream stream
+                                                                       :jam/id jam-id
+                                                                       :teleporter/id id}))
+        (when (= members
+                 (proto/read-db db [:jam jam-id :jam/call-ended])
+                 (proto/read-db db [:jam jam-id :jam/stream-stopped]))
+          ;; publish end of jam
+          (do
+            (log/debug "Deleting jam")
+            (mqtt/publish mqtt-client "jam" {:message/type :jam/stopped
+                                             :jam/members members
+                                             :jam/id jam-id})
+            (mqtt/unsubscribe mqtt-client
+                              (keys (get-jam-topic-subscriptions :platform {:jam/id jam-id})))
+            (proto/delete-db db [:jam jam-id]))))
+      (log/error "Neither sip or stream was correct. Expected :sip/call-ended for sip or :stream/stopped for stream"
+                 {:sip sip
+                  :stream stream
+                  :jam/id jam-id
+                  :teleporter/id id}))))
 
 (defn- check-for-timeouts* [{:keys [db mqtt-client timeout-ms-waiting timeout-ms-jam-eol]}]
   (let [waiting (proto/read-db db [:waiting])
@@ -154,9 +175,10 @@
   (let [now (t/now)
         jams-eol (->> (proto/read-db db [:jam])
                       (filter (fn [[_ {:jam/keys [status timeout]}]]
-                                (and (= :stopping status)
-                                     (t/> now (t/>> timeout (t/new-duration timeout-ms-jam-eol :millis))))))
+                                (and (= :stopping #spy/d status)
+                                     (t/> now #spy/d (t/>> timeout (t/new-duration timeout-ms-jam-eol :millis))))))
                       (map second))]
+    (log/debug (into [] jams-eol))
     (doseq [{:jam/keys [members id]} jams-eol]
       (doseq [tp-id members]
         (mqtt/publish mqtt-client (teleporter-topic tp-id) {:message/type :teleporter.cmd/hangup-all
@@ -164,7 +186,11 @@
       ;; publish that the jam has been stopped
       (mqtt/publish mqtt-client "jam" {:message/type :jam/stopped
                                        :jam/members members
-                                       :jam/id id}))))
+                                       :jam/id id})
+      (mqtt/unsubscribe mqtt-client
+                        (keys (get-jam-topic-subscriptions :platform {:jam/id id})))
+      ;; delete jam
+      (proto/delete-db db [:jam id]))))
 
 (defrecord JamManager [started? db mqtt-client timeout-ms-waiting timeout-ms-jam-eol]
   component/Lifecycle
