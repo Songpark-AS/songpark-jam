@@ -116,30 +116,13 @@
     (when-not (jamming? jam)
       (log/error "Trying to broadcast to a jam when not in a jam" msg))))
 
-(defn- handle-ipc-value [{:keys [data tp-id mqtt-client] :as jam}
+(defn- handle-ipc-value
+  "Handles outgoing IPC values only. Commands are handled seperately"
+  ;;  commands are handled in the implementation details of the TPX codebase
+  [{:keys [data tp-id mqtt-client] :as jam}
                          {:keys [event/type event/value] :as v}]
   (log/debug :handle-ipc-value v)
   (case type
-    ;; volumes are messed up because of how the CLI interface
-    ;; of the bridge program works. You are always printed a table
-    ;; with all the values, regardless of what you asked for. As such,
-    ;; you will have race conditions where you cannot know which is which,
-    ;; and therefore it's better to just send all the volumes
-    :volume/global-volume
-    (broadcast-to-jam jam {:message/type :teleporter/volumes
-                           :teleporter/volumes value
-                           :teleporter/id tp-id})
-    :volume/local-volume
-    (broadcast-to-jam jam {:message/type :teleporter/volumes
-                           :teleporter/volumes value
-                           :teleporter/id tp-id})
-    :volume/network-volume
-    (broadcast-to-jam jam {:message/type :teleporter/volumes
-                           :teleporter/volumes value
-                           :teleporter/id tp-id})
-    :jam/playout-delay
-    (broadcast-jam-status jam)
-
     :sip/making-call
     (do
       (set-state jam type)
