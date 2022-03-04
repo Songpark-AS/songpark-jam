@@ -12,7 +12,7 @@
 (defprotocol IJamPlatform
   (ask [platform tp-id] "Ask for a jam")
   (obviate [platform tp-id] "The TP no longer want to participate in a jam")
-  (left [platform jam-id tp-id] "This TP has now left the jam")
+  (left [platform jam-id message] "This TP has now left the jam")
   (stop [platform jam-id] "Stop the jam")
   (check-for-timeouts [platform] "Check if any TPs in the waiting list have timed out"))
 
@@ -210,8 +210,8 @@
     (ask* this tp-id))
   (stop [this jam-id]
     (stop* this jam-id))
-  (left [this jam-id tp-id]
-    (left* this jam-id tp-id))
+  (left [this jam-id message]
+    (left* this jam-id message))
   (obviate [this tp-id]
     (obviate* this tp-id))
   (check-for-timeouts [this]
