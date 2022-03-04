@@ -117,16 +117,18 @@
     (when-not (jamming? jam)
       (log/error "Trying to broadcast to a jam when not in a jam" msg))))
 
-(defn- platform-left [{:keys [mqtt-client tp-id] :as jam} status]
+(defn- platform-left [{:keys [mqtt-client tp-id data] :as jam} status]
   (let [msg (case status
               :sip/call-ended
               {:message/type :jam.teleporter/left
                :jam.teleporter.status/sip :sip/call-ended
-               :teleporter/id tp-id}
+               :teleporter/id tp-id
+               :jam/id (:jam/id @data)}
               :stream/stopped
               {:message/type :jam.teleporter/left
                :jam.teleporter.status/stream :stream/stopped
-               :teleporter/id tp-id})
+               :teleporter/id tp-id
+               :jam/id (:jam/id @data)})
         topic (jam.util/get-jam-topic :platform jam)]
     (mqtt/publish mqtt-client topic msg)))
 

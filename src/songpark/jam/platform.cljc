@@ -175,10 +175,9 @@
   (let [now (t/now)
         jams-eol (->> (proto/read-db db [:jam])
                       (filter (fn [[_ {:jam/keys [status timeout]}]]
-                                (and (= :stopping #spy/d status)
-                                     (t/> now #spy/d (t/>> timeout (t/new-duration timeout-ms-jam-eol :millis))))))
+                                (and (= :stopping status)
+                                     (t/> now (t/>> timeout (t/new-duration timeout-ms-jam-eol :millis))))))
                       (map second))]
-    (log/debug (into [] jams-eol))
     (doseq [{:jam/keys [members id]} jams-eol]
       (doseq [tp-id members]
         (mqtt/publish mqtt-client (teleporter-topic tp-id) {:message/type :teleporter.cmd/hangup-all
