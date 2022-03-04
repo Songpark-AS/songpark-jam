@@ -86,8 +86,8 @@
      :sip/incoming-call
      :sip/hangup
      :sip/call-ended
-     :stream/syncing
-     :stream/sync-failed
+     :sync/syncing
+     :sync/sync-failed
      :stream/streaming
      :stream/stopped} (get-state jam)))
 
@@ -179,17 +179,17 @@
         (broadcast-jam-status jam)
         ;; inform the platform that the TP has left the jam on the SIP front
         (platform-left jam type)))
-    :stream/syncing
+    :sync/syncing
     (do
       (set-state jam type)
       (let [other-tp-id (get-other-teleporter-id jam)]
-        (update-jam-teleporter jam other-tp-id :stream type)
+        (update-jam-teleporter jam other-tp-id :sync type)
         (broadcast-jam-status jam)))
-    :stream/sync-failed
+    :sync/sync-failed
     (do
       (set-state jam type)
       (let [other-tp-id (get-other-teleporter-id jam)]
-        (update-jam-teleporter jam other-tp-id :stream type)
+        (update-jam-teleporter jam other-tp-id :sync type)
         (broadcast-jam-status jam)))
     :stream/streaming
     (do
@@ -247,7 +247,8 @@
                                              ;; data about the jam
                                              :#jam {:id #uuid "00000000-0000-0000-0000-000000000000"
                                                     :teleporters {:tp-id-other-or-own {:sip #{:sip/call :sip/in-call :sip/hungup}
-                                                                                       :stream #{:stream/syncing :stream/sync-failed :stream/streaming}}}}}))
+                                                                                       :stream #{:stream/broken :stream/streaming}
+                                                                                       :sync #{:sync/syncing :sync/sync-failed}}}}}))
                 closer-chan (handle-ipc new-this)]
             (clear-jam-teleporters new-this)
             (set-state new-this :idle)
