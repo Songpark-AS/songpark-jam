@@ -197,6 +197,12 @@
       (let [other-tp-id (get-other-teleporter-id jam)]
         (update-jam-teleporter jam other-tp-id :stream type)
         (broadcast-jam-status jam)))
+    :stream/broken
+    (do
+      (set-state jam type)
+      (let [other-tp-id (get-other-teleporter-id jam)]
+        (update-jam-teleporter jam other-tp-id :stream type)
+        (broadcast-jam-status jam)))
     :stream/stopped
     (do
       (set-state jam type)
