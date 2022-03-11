@@ -88,8 +88,10 @@
      :sip/call-ended
      :sync/syncing
      :sync/sync-failed
+     :sync/synced
      :stream/streaming
-     :stream/stopped} (get-state jam)))
+     :stream/stopped
+     :stream/broken} (get-state jam)))
 
 (defn state? [jam state]
   (= state (get-state jam)))
