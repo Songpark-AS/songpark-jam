@@ -85,8 +85,9 @@
      :sip/calling
      :sip/incoming-call
      :sip/hangup
-     :stream/syncing
-     :stream/sync-failed
+     :sip/call-ended
+     :sync/syncing
+     :sync/sync-failed
      :stream/streaming
      :stream/stopped} (get-state jam)))
 
@@ -116,30 +117,29 @@
     (when-not (jamming? jam)
       (log/error "Trying to broadcast to a jam when not in a jam" msg))))
 
-(defn- handle-ipc-value [{:keys [data tp-id mqtt-client] :as jam}
+(defn- platform-left [{:keys [mqtt-client tp-id data] :as jam} status]
+  (let [jam-id (:jam/id @data)
+        msg (case status
+              :sip/call-ended
+              {:message/type :jam.teleporter/left
+               :jam.teleporter.status/sip :sip/call-ended
+               :teleporter/id tp-id
+               :jam/id jam-id}
+              :stream/stopped
+              {:message/type :jam.teleporter/left
+               :jam.teleporter.status/stream :stream/stopped
+               :teleporter/id tp-id
+               :jam/id jam-id})
+        topic (jam.util/get-jam-topic :platform {:jam/id jam-id})]
+    (mqtt/publish mqtt-client topic msg)))
+
+(defn- handle-ipc-value
+  "Handles outgoing IPC values only. Commands are handled seperately"
+  ;;  commands are handled in the implementation details of the TPX codebase
+  [{:keys [data tp-id mqtt-client] :as jam}
                          {:keys [event/type event/value] :as v}]
   (log/debug :handle-ipc-value v)
   (case type
-    ;; volumes are messed up because of how the CLI interface
-    ;; of the bridge program works. You are always printed a table
-    ;; with all the values, regardless of what you asked for. As such,
-    ;; you will have race conditions where you cannot know which is which,
-    ;; and therefore it's better to just send all the volumes
-    :volume/global-volume
-    (broadcast-to-jam jam {:message/type :teleporter/volumes
-                           :teleporter/volumes value
-                           :teleporter/id tp-id})
-    :volume/local-volume
-    (broadcast-to-jam jam {:message/type :teleporter/volumes
-                           :teleporter/volumes value
-                           :teleporter/id tp-id})
-    :volume/network-volume
-    (broadcast-to-jam jam {:message/type :teleporter/volumes
-                           :teleporter/volumes value
-                           :teleporter/id tp-id})
-    :jam/playout-delay
-    (broadcast-jam-status jam)
-
     :sip/making-call
     (do
       (set-state jam type)
@@ -176,20 +176,28 @@
       (set-state jam type)
       (let [other-tp-id (get-other-teleporter-id jam)]
         (update-jam-teleporter jam other-tp-id :sip type)
-        (broadcast-jam-status jam)))
-    :stream/syncing
+        (broadcast-jam-status jam)
+        ;; inform the platform that the TP has left the jam on the SIP front
+        (platform-left jam type)))
+    :sync/syncing
     (do
       (set-state jam type)
       (let [other-tp-id (get-other-teleporter-id jam)]
-        (update-jam-teleporter jam other-tp-id :stream type)
+        (update-jam-teleporter jam other-tp-id :sync type)
         (broadcast-jam-status jam)))
-    :stream/sync-failed
+    :sync/sync-failed
     (do
       (set-state jam type)
       (let [other-tp-id (get-other-teleporter-id jam)]
-        (update-jam-teleporter jam other-tp-id :stream type)
+        (update-jam-teleporter jam other-tp-id :sync type)
         (broadcast-jam-status jam)))
     :stream/streaming
+    (do
+      (set-state jam type)
+      (let [other-tp-id (get-other-teleporter-id jam)]
+        (update-jam-teleporter jam other-tp-id :stream type)
+        (broadcast-jam-status jam)))
+    :stream/broken
     (do
       (set-state jam type)
       (let [other-tp-id (get-other-teleporter-id jam)]
@@ -200,7 +208,9 @@
       (set-state jam type)
       (let [other-tp-id (get-other-teleporter-id jam)]
         (update-jam-teleporter jam other-tp-id :stream type)
-        (broadcast-jam-status jam)))
+        (broadcast-jam-status jam)
+        ;; inform the platform that the TP has left the jam on the streaming front
+        (platform-left jam type)))
     
     :sip/register
     (mqtt/broadcast mqtt-client {:message/type type
@@ -243,7 +253,8 @@
                                              ;; data about the jam
                                              :#jam {:id #uuid "00000000-0000-0000-0000-000000000000"
                                                     :teleporters {:tp-id-other-or-own {:sip #{:sip/call :sip/in-call :sip/hungup}
-                                                                                       :stream #{:stream/syncing :stream/sync-failed :stream/streaming}}}}}))
+                                                                                       :stream #{:stream/broken :stream/streaming}
+                                                                                       :sync #{:sync/syncing :sync/sync-failed}}}}}))
                 closer-chan (handle-ipc new-this)]
             (clear-jam-teleporters new-this)
             (set-state new-this :idle)
