@@ -137,7 +137,7 @@
   "Handles outgoing IPC values only. Commands are handled seperately"
   ;;  commands are handled in the implementation details of the TPX codebase
   [{:keys [data tp-id mqtt-client] :as jam}
-                         {:keys [event/type event/value] :as v}]
+   {:keys [event/type event/value] :as v}]
   (log/debug :handle-ipc-value v)
   (case type
     :sip/making-call
@@ -211,6 +211,11 @@
         (broadcast-jam-status jam)
         ;; inform the platform that the TP has left the jam on the streaming front
         (platform-left jam type)))
+
+    :jam/coredump
+    (broadcast-to-jam jam {:message/type :jam.teleporter/coredump
+                           :jam/coredump value
+                           :teleporter/id tp-id})
     
     :sip/register
     (mqtt/broadcast mqtt-client {:message/type type
@@ -230,14 +235,14 @@
 
           (do
             (when v
-             (log/debug "Handling IPC value" v)
-             (try
-               (handle-ipc-value jam v)
-               (catch Exception e
-                 (log/error "Caught exception in handle-ipc" {:exception e
-                                                              :v v
-                                                              :data (ex-data e)
-                                                              :message (ex-message e)}))))
+              (log/debug "Handling IPC value" v)
+              (try
+                (handle-ipc-value jam v)
+                (catch Exception e
+                  (log/error "Caught exception in handle-ipc" {:exception e
+                                                               :v v
+                                                               :data (ex-data e)
+                                                               :message (ex-message e)}))))
             (recur)))))
     closer))
 
