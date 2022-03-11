@@ -185,6 +185,12 @@
       (let [other-tp-id (get-other-teleporter-id jam)]
         (update-jam-teleporter jam other-tp-id :sync type)
         (broadcast-jam-status jam)))
+    :sync/synced
+    (do
+      (set-state jam type)
+      (let [other-tp-id (get-other-teleporter-id jam)]
+        (update-jam-teleporter jam other-tp-id :sync type)
+        (broadcast-jam-status jam)))
     :sync/sync-failed
     (do
       (set-state jam type)
