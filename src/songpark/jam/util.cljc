@@ -10,15 +10,15 @@
   (case environment
 
     :platform
-    {(str jam-id "/jam/platform") 0}
+    {(str jam-id "/jam/platform") 2}
 
     :teleporter
     (do (assert (some? teleporter-id) "Missing teleporter-id]")
-        {(str jam-id "/jam/teleporter/" teleporter-id) 0})
+        {(str jam-id "/jam/teleporter/" teleporter-id) 2})
     
     :app
-    {(str jam-id "/jam") 0
-     (str jam-id "/jam/app") 0}
+    {(str jam-id "/jam") 2
+     (str jam-id "/jam/app") 2}
     
     (throw (ex-info "No supported environment was found. Supported environments are :teleporter and :app" {:environment environment}))))
 
