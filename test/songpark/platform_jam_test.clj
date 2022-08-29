@@ -22,13 +22,13 @@
                                                                 :timeout-ms-jam-eol (* 5 1000)
                                                                 :mqtt-client @client}))
         teleporters {"tp1" {:teleporter/id "tp1"
-                            :teleporter/sip "tp1@voip1.inonit.no"}
+                            :teleporter/sip "tp1@voip1.songpark.com"}
                      "tp2" {:teleporter/id "tp2"
-                            :teleporter/sip "tp2@voip1.inonit.no"}
+                            :teleporter/sip "tp2@voip1.songpark.com"}
                      "tp3" {:teleporter/id "tp3"
-                            :teleporter/sip "tp3@voip1.inonit.no"}
+                            :teleporter/sip "tp3@voip1.songpark.com"}
                      "tp4" {:teleporter/id "tp4"
-                            :teleporter/sip "tp4@voip1.inonit.no"}}]
+                            :teleporter/sip "tp4@voip1.songpark.com"}}]
     (proto/write-db db [:teleporter] teleporters)
     (proto/write-db db [:jam] {})
 
@@ -67,6 +67,26 @@
               waiting (proto/read-db db [:waiting])]
           (is (and (empty? jam)
                    (empty? waiting))))))
+    (testing "phoning"
+      (jam.platform/phone jam-manager "tp1" "tp2")
+      (let [jam (proto/read-db db [:jam])]
+        (is (not (empty? jam)))))
+    (testing "clean up after phoning"
+      (let [jam-id (-> (proto/read-db db [:jam])
+                       ffirst)]
+        (jam.platform/left jam-manager jam-id {:teleporter/id "tp1"
+                                               :jam.teleporter.status/sip :sip/call-ended})
+        (jam.platform/left jam-manager jam-id {:teleporter/id "tp1"
+                                               :jam.teleporter.status/stream :stream/stopped})
+        (jam.platform/left jam-manager jam-id {:teleporter/id "tp2"
+                                               :jam.teleporter.status/sip :sip/call-ended})
+        (jam.platform/left jam-manager jam-id {:teleporter/id "tp2"
+                                               :jam.teleporter.status/stream :stream/stopped})
+
+        (let [jam (proto/read-db db [:jam])
+              waiting (proto/read-db db [:waiting])]
+          (is (and (empty? #spy/d jam)
+                   (empty? #spy/d waiting))))))
     (testing "ask timed out"
       (jam.platform/ask jam-manager "tp3")
       (sleep 6000)
@@ -86,6 +106,6 @@
         (jam.platform/check-for-timeouts jam-manager)
         (is (and (uuid? jam-id)
                  (empty? (proto/read-db db [:jam]))))))
-    
+
     (component/stop jam-manager)
     (stop @client)))

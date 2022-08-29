@@ -23,8 +23,8 @@
   (let [client (atom nil)
         tp-id "tpx1"
         tps ["tpx1" "tpx2"]
-        sips {"tpx1" "tpx1@voip1.inonit.no"
-              "tpx2" "tpx2@void1.inonit.no"}
+        sips {"tpx1" "tpx1@voip1.songpark.com"
+              "tpx2" "tpx2@void1.songpark.com"}
         _ (reset! client (init-client tp-id))
         ipc (component/start (tpx.ipc/get-ipc {}))
         jam (component/start (jam.tpx/get-jam {:tp-id tp-id
@@ -41,15 +41,15 @@
     (testing "Join jam"
       (do (tpx.ipc/reset-history! ipc)
           (jam.tpx/join jam jam-data)
-          (is (= (tpx.ipc/get-history ipc) [[:sip/call "tpx2@void1.inonit.no"]]))))
+          (is (= (tpx.ipc/get-history ipc) [[:sip/call "tpx2@void1.songpark.com"]]))))
 
     (testing "Join and leave jam"
       (do (tpx.ipc/reset-history! ipc)
           (jam.tpx/join jam jam-data)
           (jam.tpx/leave jam)
-          (is (= (tpx.ipc/get-history ipc) [[:sip/call "tpx2@void1.inonit.no"]
+          (is (= (tpx.ipc/get-history ipc) [[:sip/call "tpx2@void1.songpark.com"]
                                             [:jam/stop-coredump true]
-                                            [:sip/hangup "tpx2@void1.inonit.no"]]))))
+                                            [:sip/hangup "tpx2@void1.songpark.com"]]))))
 
     (testing "Full call"
       (do (tpx.ipc/reset-history! ipc)
@@ -61,7 +61,7 @@
           (fake-command ipc :stream/syncing 0)
           (fake-command ipc :stream/streaming 0)
           (jam.tpx/leave jam)
-          (is (= (tpx.ipc/get-history ipc) [[:sip/call "tpx2@void1.inonit.no"]
+          (is (= (tpx.ipc/get-history ipc) [[:sip/call "tpx2@void1.songpark.com"]
                                             [:sip/making-call 0]
                                             [:sip/calling 0]
                                             [:sip/in-call 0]
@@ -69,7 +69,7 @@
                                             [:stream/syncing 0]
                                             [:stream/streaming 0]
                                             [:jam/stop-coredump true]
-                                            [:sip/hangup "tpx2@void1.inonit.no"]]))))
+                                            [:sip/hangup "tpx2@void1.songpark.com"]]))))
 
     (testing "Incoming call"
       (do (tpx.ipc/reset-history! ipc)
@@ -80,14 +80,14 @@
           (fake-command ipc :stream/syncing 0)
           (fake-command ipc :stream/streaming 0)
           (jam.tpx/leave jam)
-          (is (= (tpx.ipc/get-history ipc) [[:sip/call "tpx2@void1.inonit.no"]
+          (is (= (tpx.ipc/get-history ipc) [[:sip/call "tpx2@void1.songpark.com"]
                                             [:sip/incoming-call 0]
                                             [:sip/in-call 0]
                                             [:stream/connecting 0]
                                             [:stream/syncing 0]
                                             [:stream/streaming 0]
                                             [:jam/stop-coredump true]
-                                            [:sip/hangup "tpx2@void1.inonit.no"]]))))
+                                            [:sip/hangup "tpx2@void1.songpark.com"]]))))
 
     (testing "Left"
       (do (tpx.ipc/reset-history! ipc)
@@ -100,20 +100,19 @@
           (jam.tpx/leave jam)
           (fake-command ipc :sip/call-ended 0)
           (fake-command ipc :stream/stopped 0)
-          (is (= (tpx.ipc/get-history ipc) [[:sip/call "tpx2@void1.inonit.no"]
+          (is (= (tpx.ipc/get-history ipc) [[:sip/call "tpx2@void1.songpark.com"]
                                             [:sip/incoming-call 0]
                                             [:sip/in-call 0]
                                             [:stream/connecting 0]
                                             [:stream/syncing 0]
                                             [:stream/streaming 0]
                                             [:jam/stop-coredump true]
-                                            [:sip/hangup "tpx2@void1.inonit.no"]
+                                            [:sip/hangup "tpx2@void1.songpark.com"]
                                             [:sip/call-ended 0]
                                             [:stream/stopped 0]]))))
 
 
-    
+
     (component/stop jam)
     (component/stop ipc)
     (stop @client)))
-

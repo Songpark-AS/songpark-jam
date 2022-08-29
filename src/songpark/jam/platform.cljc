@@ -10,8 +10,15 @@
             [tick.core :as t]))
 
 (defprotocol IJamPlatform
+  ;; open jam is supposed by ask and obivate
+  ;; when you get the first person who asks for a jam
   (ask [platform tp-id] "Ask for a jam")
   (obviate [platform tp-id] "The TP no longer want to participate in a jam")
+
+  ;; specific jam is supported by phone
+
+  (phone [platform from-tp-id to-tp-id])
+
   (left [platform jam-id message] "This TP has now left the jam")
   (stop [platform jam-id] "Stop the jam")
   (check-for-timeouts [platform] "Check if any TPs in the waiting list have timed out"))
@@ -60,10 +67,8 @@
       (into [zedboard1] (disj members zedboard1))
       (into [] members))))
 
-(defn- setup-jam! [db waiting mqtt-client tp-id-1]
-  ;; waiting should only ever have 0 or 1 entry
-  (let [[tp-id-2 _] (first waiting)
-        jam-id (get-id)
+(defn- setup-jam! [db mqtt-client tp-id-1 tp-id-2]
+  (let [jam-id (get-id)
         members (get-start-order [tp-id-1 tp-id-2])
         teleporters (proto/read-db db [:teleporter])
         jam {:jam/id jam-id
@@ -95,14 +100,27 @@
       ;; do nothing
       jamming?
       nil
+
       can-jam?
-      (setup-jam! db waiting mqtt-client tp-id)
+      (setup-jam! db mqtt-client (ffirst waiting) tp-id)
+
       ;; add the tp-id to the waiting list and send back a reply over mqtt that it's waiting
       :else
       (do (proto/write-db db [:waiting tp-id] (t/now))
           (proto/write-db db [:teleporter tp-id :teleporter/status] :waiting)
           (mqtt/publish mqtt-client "jam" {:message/type :jam/waiting
                                            :teleporter/id tp-id})))))
+
+(defn- phone* [{:keys [db mqtt-client]} from-tp-id to-tp-id]
+  (let [jams (proto/read-db db [:jam])
+        tp-members (set [from-tp-id to-tp-id])
+        jamming? (->> jams
+                      (filter (fn [[jam-id {:keys [jam/members]}]]
+                                (= (set members) tp-members)))
+                      first)]
+    (if jamming?
+      nil
+      (setup-jam! db mqtt-client from-tp-id to-tp-id))))
 
 (defn- stop* [{:keys [db mqtt-client]} jam-id]
   (let [{:keys [jam/members]} (proto/read-db db [:jam jam-id])
@@ -208,12 +226,14 @@
   IJamPlatform
   (ask [this tp-id]
     (ask* this tp-id))
+  (obviate [this tp-id]
+    (obviate* this tp-id))
+  (phone [this from-tp-id to-tp-id]
+    (phone* this from-tp-id to-tp-id))
   (stop [this jam-id]
     (stop* this jam-id))
   (left [this jam-id message]
     (left* this jam-id message))
-  (obviate [this tp-id]
-    (obviate* this tp-id))
   (check-for-timeouts [this]
     (check-for-timeouts* this)))
 
