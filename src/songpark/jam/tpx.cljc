@@ -224,11 +224,11 @@
     (broadcast-to-jam jam {:message/type :jam.teleporter/coredump
                            :jam/coredump value
                            :teleporter/id tp-id})
-    
+
     :sip/register
     (mqtt/broadcast mqtt-client {:message/type type
                                  :teleporter/id tp-id})
-    
+
     (log/error "Event type" v "not handled" v)))
 
 (defn- handle-ipc [{:keys [ipc] :as jam}]

@@ -51,10 +51,8 @@
 
 (defn- get-sips [teleporters members]
   (let [members (set members)]
-    (->> teleporters
-         (vals)
-         (filter #(members (:teleporter/id %)))
-         (map (juxt :teleporter/id  :teleporter/sip))
+    (->> (select-keys teleporters members)
+         (map (juxt first #(-> % second :teleporter/sip)))
          (into {}))))
 
 (defn- get-start-order [members]
@@ -195,7 +193,8 @@
                       (filter (fn [[_ {:jam/keys [status timeout]}]]
                                 (and (= :stopping status)
                                      (t/> now (t/>> timeout (t/new-duration timeout-ms-jam-eol :millis))))))
-                      (map second))]
+                      (map (fn [[jam-id jam]]
+                             (assoc jam :jam/id jam-id))))]
     (doseq [{:jam/keys [members id]} jams-eol]
       (doseq [tp-id members]
         (mqtt/publish mqtt-client (teleporter-topic tp-id) {:message/type :teleporter.cmd/hangup-all
