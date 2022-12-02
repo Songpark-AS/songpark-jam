@@ -3,7 +3,7 @@
             [com.stuartsierra.component :as component]
             [songpark.mqtt :as mqtt]
             [songpark.jam.tpx.ipc :as tpx.ipc]
-            [songpark.jam.util :as jam.util]
+            [songpark.jam.util :refer [get-jam-topic]]
             [taoensso.timbre :as log]))
 
 (def port 8421)
@@ -32,20 +32,7 @@
   (= :idle (get-state tpx)))
 
 (defn jamming? [tpx]
-  (#{:jam/joined
-     :sip/making-call
-     :sip/call
-     :sip/in-call
-     :sip/calling
-     :sip/incoming-call
-     :sip/hangup
-     :sip/call-ended
-     :sync/syncing
-     :sync/sync-failed
-     :sync/synced
-     :stream/streaming
-     :stream/stopped
-     :stream/broken} (get-state tpx)))
+  (not (idle? tpx)))
 
 (defn state?
   "Is the TPX in this state?"
@@ -97,7 +84,7 @@
                      :teleporter/id tp-id
                      :jam/id (:jam/id jam-data)}))
     (mqtt/publish mqtt-client
-                  (jam.util/get-jam-topic (:jam/id jam-data))
+                  (get-jam-topic (:jam/id jam-data))
                   {:message/type :jam.teleporter/error
                    :teleporter/id tp-id
                    :jam/id (:jam/id jam-data)
@@ -146,14 +133,8 @@
 (defn- set-state* [{:keys [data] :as _jam} value]
   (swap! data assoc :state value))
 
-(defn- jam-status
-  ([{:keys [data] :as _jam}]
-   (:jam/status @data))
-  ([{:keys [data] :as _jam} status]
-   (swap! data assoc :jam/status status)))
-
 (defn- broadcast-to-jam [{:keys [mqtt-client data] :as _jam} msg]
-  (let [topic (jam.util/get-jam-topic (:jam/id @data))]
+  (let [topic (get-jam-topic (:jam/id @data))]
     (mqtt/publish mqtt-client topic msg)))
 
 (defn- get-other-teleporter-id [{:keys [tp-id data] :as _jam}]
@@ -164,29 +145,13 @@
     (disj $ tp-id)
     (first $)))
 
-(defn- broadcast-jam-status [{:keys [data tp-id] :as tpx}]
-  (let [msg (merge (select-keys @data [:jam/teleporters])
-                   {:message/type :jam.teleporter/status
-                    :teleporter/id tp-id})]
+(defn- broadcast-jam-status [{:keys [data tp-id] :as tpx} v]
+  (let [msg (assoc v
+                   :message/type :jam/event
+                   :teleporter/id tp-id)]
     (broadcast-to-jam tpx msg)
     (when-not (jamming? tpx)
       (log/error "Trying to broadcast to a jam when not in a jam" msg))))
-
-;; (defn- platform-left [{:keys [mqtt-client tp-id data] :as tpx} status]
-;;   (let [jam-id (:jam/id @data)
-;;         msg (case status
-;;               :sip/call-ended
-;;               {:message/type :jam/left
-;;                :jam.teleporter.status/sip :sip/call-ended
-;;                :teleporter/id tp-id
-;;                :jam/id jam-id}
-;;               :stream/stopped
-;;               {:message/type :jam/left
-;;                :jam.teleporter.status/stream :stream/stopped
-;;                :teleporter/id tp-id
-;;                :jam/id jam-id})
-;;         topic (jam.util/get-jam-topic :platform {:jam/id jam-id})]
-;;     (mqtt/publish mqtt-client topic msg)))
 
 (defn- handle-ipc-value
   "Handles outgoing IPC values only. Commands are handled seperately"
@@ -195,92 +160,24 @@
    {:keys [event/type event/value] :as v}]
   (log/debug :handle-ipc-value v)
   (case type
-    ;; :sip/making-call
-    ;; (do
-    ;;   (set-state jam type)
-    ;;   (let [other-tp-id (get-other-teleporter-id jam)]
-    ;;     (update-jam-teleporter jam other-tp-id :sip type)
-    ;;     (broadcast-jam-status jam)))
-    ;; :sip/calling
-    ;; (do
-    ;;   (set-state jam type)
-    ;;   (let [other-tp-id (get-other-teleporter-id jam)]
-    ;;     (update-jam-teleporter jam other-tp-id :sip type)
-    ;;     (broadcast-jam-status jam)))
-    ;; :sip/incoming-call
-    ;; (do
-    ;;   (set-state jam type)
-    ;;   (let [other-tp-id (get-other-teleporter-id jam)]
-    ;;     (update-jam-teleporter jam other-tp-id :sip type)
-    ;;     (broadcast-jam-status jam)))
-    ;; :sip/error
-    ;; (do
-    ;;   (set-state jam type)
-    ;;   (let [other-tp-id (get-other-teleporter-id jam)]
-    ;;     (update-jam-teleporter jam other-tp-id :sip type)
-    ;;     (update-jam-teleporter jam other-tp-id type value)
-    ;;     (broadcast-jam-status jam)))
-    ;; :sip/in-call
-    ;; (do
-    ;;   (set-state jam type)
-    ;;   (let [other-tp-id (get-other-teleporter-id jam)]
-    ;;     (update-jam-teleporter jam other-tp-id :sip type)
-    ;;     (broadcast-jam-status jam)))
-    ;; :sip/call-ended
-    ;; (do
-    ;;   (set-state jam type)
-    ;;   (let [other-tp-id (get-other-teleporter-id jam)]
-    ;;     (update-jam-teleporter jam other-tp-id :sip type)
-    ;;     (broadcast-jam-status jam)
-    ;;     ;; inform the platform that the TP has left the jam on the SIP front
-    ;;     (platform-left jam type)))
     :sync/syncing
-    (do
-      (set-state jam type)
-      (let [other-tp-id (get-other-teleporter-id jam)]
-        (update-jam-teleporter jam other-tp-id :sync type)
-        (broadcast-jam-status jam)))
+    (broadcast-jam-status jam v)
     :sync/synced
-    (do
-      (set-state jam type)
-      (let [other-tp-id (get-other-teleporter-id jam)]
-        (update-jam-teleporter jam other-tp-id :sync type)
-        (broadcast-jam-status jam)))
+    (broadcast-jam-status jam v)
     :sync/sync-failed
-    (do
-      (set-state jam type)
-      (let [other-tp-id (get-other-teleporter-id jam)]
-        (update-jam-teleporter jam other-tp-id :sync type)
-        (broadcast-jam-status jam)))
+    (broadcast-jam-status jam v)
+    :sync/responded
+    (broadcast-jam-status jam v)
     :stream/streaming
-    (do
-      (set-state jam type)
-      (let [other-tp-id (get-other-teleporter-id jam)]
-        (update-jam-teleporter jam other-tp-id :stream type)
-        (broadcast-jam-status jam)))
+    (broadcast-jam-status jam v)
     :stream/broken
-    (do
-      (set-state jam type)
-      (let [other-tp-id (get-other-teleporter-id jam)]
-        (update-jam-teleporter jam other-tp-id :stream type)
-        (broadcast-jam-status jam)))
+    (broadcast-jam-status jam v)
     :stream/stopped
-    (do
-      (set-state jam type)
-      (let [other-tp-id (get-other-teleporter-id jam)]
-        (update-jam-teleporter jam other-tp-id :stream type)
-        (broadcast-jam-status jam)
-        ;; inform the platform that the TP has left the jam on the streaming front
-        (platform-left jam type)))
-
+    (broadcast-jam-status jam v)
     :jam/coredump
     (broadcast-to-jam jam {:message/type :jam.teleporter/coredump
                            :jam/coredump value
                            :teleporter/id tp-id})
-
-    :sip/register
-    (mqtt/broadcast mqtt-client {:message/type type
-                                 :teleporter/id tp-id})
 
     (log/error "Event type" v "not handled" v)))
 
@@ -319,7 +216,8 @@
                                              ;; data about the jam
                                              :#jam {:id #uuid "00000000-0000-0000-0000-000000000000"
                                                     :teleporters {:tp-id-other-or-own {:teleporter/id #uuid "00000000-0000-0000-0000-000000000000"
-                                                                                       :teleporter/ip "10.100.200.104"
+                                                                                       :teleporter/local-ip "10.0.0.10"
+                                                                                       :teleporter/public-ip "10.100.200.10"
                                                                                        :call #{:call/limbo :call/receiving :call/calling :call/hangup :call/in-call :call/ended}
                                                                                        :stream #{:stream/broken :stream/streaming}
                                                                                        :sync #{:sync/syncing :sync/sync-failed}}}}}))

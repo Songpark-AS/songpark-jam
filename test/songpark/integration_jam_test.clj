@@ -35,13 +35,17 @@
                          (component/start))
 
         teleporters {tp-id1 {:teleporter/id tp-id1
-                             :teleporter/ip "10.100.200.10"}
+                             :teleporter/local-ip "10.0.0.10"
+                             :teleporter/public-ip "10.100.200.10"}
                      tp-id2 {:teleporter/id tp-id2
-                             :teleporter/ip "10.100.200.20"}
+                             :teleporter/local-ip "20.0.0.10"
+                             :teleporter/public-ip "10.100.200.20"}
                      tp-id3 {:teleporter/id tp-id3
-                             :teleporter/ip "10.100.200.30"}
+                             :teleporter/local-ip "30.0.0.10"
+                             :teleporter/public-ip "10.100.200.30"}
                      tp-id4 {:teleporter/id tp-id4
-                             :teleporter/ip "10.100.200.40"}}
+                             :teleporter/local-ip "40.0.0.10"
+                             :teleporter/public-ip "10.100.200.40"}}
 
         _ (proto/write-db db [:teleporter] teleporters)
         _ (proto/write-db db [:jam] {})
@@ -52,9 +56,11 @@
         client-tpx1 (atom nil)
         client-tpx2 (atom nil)
         tp1-data {:teleporter/id tp-id1
-                  :teleporter/ip "10.100.200.10"}
+                  :teleporter/local-ip "10.0.0.10"
+                  :teleporter/public-ip "10.100.200.10"}
         tp2-data {:teleporter/id tp-id2
-                  :teleporter/ip "10.100.200.20"}
+                  :teleporter/local-ip "20.0.0.10"
+                  :teleporter/public-ip "10.100.200.20"}
         members [tp1-data
                  tp2-data]
         _ (reset! client-tpx1 (init-client tp-id1))
@@ -79,8 +85,8 @@
     (testing "Integration between platform and Teleporters"
       (testing "Jam has started"
         (jam.platform/start jam-manager [tp-id1 tp-id2])
-        (let [jam (proto/read-db db [:jam])]
-          (is (not (empty? jam)))))
+        (let [jams (proto/read-db db [:jams])]
+          (is (not (empty? jams)))))
 
       (testing "Teleporter 1 is receiving"
         (Thread/sleep 2000)
@@ -90,11 +96,11 @@
         (Thread/sleep 2000)
         (is (= (tpx.ipc/get-history ipc2)
                [[:call/initiate (assoc tp1-data :teleporter/port jam.tpx/port)]])))
-      (let [jam-id (->> (proto/read-db db [:jam])
+      (let [jam-id (->> (proto/read-db db [:jams])
                         ffirst)]
         (testing "Stopping the jam"
           (jam.platform/stop jam-manager jam-id)
-          (let [jam (proto/read-db db [:jam jam-id])]
+          (let [jam (proto/read-db db [:jams jam-id])]
             (is (and (tick? (:jam/timeout jam))
                      (= :stopping (:jam/status jam))))))
         (Thread/sleep 1000)

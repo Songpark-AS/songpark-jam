@@ -3,7 +3,7 @@
             [songpark.jam.platform.protocol :as proto]
             [songpark.jam.util :refer [get-id
                                        get-jam-topic
-                                       get-jam-topic-subscriptions]]
+                                       get-jam-subscription-topic]]
             [songpark.mqtt :as mqtt :refer [handle-message]]
             [songpark.mqtt.util :refer [teleporter-topic]]
             [taoensso.timbre :as log]
@@ -65,7 +65,7 @@
         members (as-> teleporters $
                   (select-keys $ tp-ids)
                   (vals $)
-                  (map #(select-keys % [:teleporter/id :teleporter/ip]) $)
+                  (map #(select-keys % [:teleporter/id :teleporter/local-ip :teleporter/public-ip]) $)
                   (sort-by :teleporter/id $)
                   (into [] $))
         jam {:jam/id jam-id
@@ -92,11 +92,9 @@
 (defn- stop* [{:keys [db mqtt-client]} jam-id]
   (let [{:keys [jam/members]} (proto/read-db db [:jams jam-id])
         msg {:message/type :jam.cmd/stop
-             :jam/id jam-id}
-        topic (get-jam-topic :jam jam-id)]
+             :jam/id jam-id}]
     (doseq [{:keys [teleporter/id]} members]
       (mqtt/publish mqtt-client id msg))
-    (mqtt/publish mqtt-client topic msg)
     (proto/write-db db [:jams jam-id :jam/status] :stopping)
     (proto/write-db db [:jams jam-id :jam/timeout] (t/now))))
 
@@ -112,7 +110,11 @@
                                         :teleporter/id id
                                         :jam/id jam-id}))))))
 
-(defn- left* [{:keys [db]} jam-id teleporter-id]
+(defn- publish-finished-jam [mqtt-client topic jam-id]
+  (mqtt/publish mqtt-client topic {:message/type :jam/finished
+                                   :jam/id jam-id}))
+
+(defn- left* [{:keys [db mqtt-client]} jam-id teleporter-id]
   (let [member (get-jam-member db jam-id teleporter-id)]
     (when member
       (write-jam-member db jam-id teleporter-id :jam/left? true))

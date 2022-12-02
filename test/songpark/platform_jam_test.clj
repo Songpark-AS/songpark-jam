@@ -23,25 +23,29 @@
                                                                 :timeout-ms-jam-eol (* 5 1000)
                                                                 :mqtt-client @client}))
         teleporters {tp-id1 {:teleporter/id tp-id1
-                             :teleporter/ip "10.100.200.104"}
+                             :teleporter/local-ip "10.0.0.10"
+                             :teleporter/public-ip "10.100.200.10"}
                      tp-id2 {:teleporter/id tp-id2
-                             :teleporter/ip "10.100.200.106"}
+                             :teleporter/local-ip "20.0.0.10"
+                             :teleporter/public-ip "10.100.200.20"}
                      tp-id3 {:teleporter/id tp-id3
-                             :teleporter/ip "10.100.200.108"}
+                             :teleporter/local-ip "30.0.0.10"
+                             :teleporter/public-ip "10.100.200.30"}
                      tp-id4 {:teleporter/id tp-id4
-                             :teleporter/ip "10.100.200.110"}}]
+                             :teleporter/local-ip "40.0.0.10"
+                             :teleporter/public-ip "10.100.200.40"}}]
     (proto/write-db db [:teleporter] teleporters)
-    (proto/write-db db [:jam] {})
+    (proto/write-db db [:jams] {})
 
     (testing "jam start"
       (jam.platform/start jam-manager [tp-id1 tp-id2])
-      (let [jam (proto/read-db db [:jam])]
+      (let [jam (proto/read-db db [:jams])]
         (is (not (empty? jam)))))
     (testing "jam stop"
-      (let [jam-id (-> (proto/read-db db [:jam])
+      (let [jam-id (-> (proto/read-db db [:jams])
                        ffirst)]
         (jam.platform/stop jam-manager jam-id)
-        (let [jam (proto/read-db db [:jam jam-id])]
+        (let [jam (proto/read-db db [:jams jam-id])]
           (is (and (tick? (:jam/timeout jam))
                    (= :stopping (:jam/status jam)))))))
     (component/stop jam-manager)
