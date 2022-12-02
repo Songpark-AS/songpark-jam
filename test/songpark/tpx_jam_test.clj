@@ -2,117 +2,82 @@
   (:require [clojure.test :refer :all]
             [com.stuartsierra.component :as component]
             [songpark.jam.tpx :as jam.tpx]
+            [songpark.jam.tpx.handler]
             [songpark.jam.tpx.ipc :as tpx.ipc]
-            [songpark.util-test :refer [get-config
+            [songpark.util-test :refer [fake-command
+                                        init-client
+                                        sleep
                                         start
                                         stop
-                                        init-client
-                                        sleep]]))
-
-
-
-
-(defn fake-command [ipc what data]
-  (tpx.ipc/command ipc what data)
-  (tpx.ipc/handler ipc what)
-  (sleep 1000))
-
+                                        tp-id1 tp-id2]]
+            [songpark.mqtt :as mqtt]))
 
 
 (deftest tpx-jam
-  (let [client (atom nil)
-        tp-id "tpx1"
-        tps ["tpx1" "tpx2"]
-        sips {"tpx1" "tpx1@voip1.songpark.com"
-              "tpx2" "tpx2@void1.songpark.com"}
-        _ (reset! client (init-client tp-id))
-        ipc (component/start (tpx.ipc/get-ipc {}))
-        jam (component/start (jam.tpx/get-jam {:tp-id tp-id
-                                               :ipc ipc
-                                               :mqtt-client @client
-                                               :saved-values (atom {:volume/global-volume 20
-                                                                    :volume/local-volume 15
-                                                                    :volume/network-volume 10
-                                                                    :jam/playout-delay 10})}))
-        jam-data {:jam/sip sips
-                  :jam/members tps
+  (let [client1 (atom nil)
+        client2 (atom nil)
+
+        tp1-data {:teleporter/id tp-id1
+                  :teleporter/ip "10.100.200.30"}
+        tp2-data {:teleporter/id tp-id2
+                  :teleporter/ip "10.100.200.40"}
+        members [tp1-data
+                 tp2-data]
+        _ (reset! client1 (init-client tp-id1))
+        _ (reset! client2 (init-client tp-id2))
+        ipc1 (component/start (tpx.ipc/get-ipc {}))
+        ipc2 (component/start (tpx.ipc/get-ipc {}))
+        tpx1 (component/start (jam.tpx/get-jam {:tp-id tp-id1
+                                                :ipc ipc1
+                                                :mqtt-client @client1}))
+        tpx2 (component/start (jam.tpx/get-jam {:tp-id tp-id2
+                                                :ipc ipc2
+                                                :mqtt-client @client2}))
+        jam-data {:jam/members members
                   :jam/id "myjamid"}]
 
+    (mqtt/add-injection @client1 :tpx tpx1)
+    (mqtt/add-injection @client2 :tpx tpx2)
+
     (testing "Join jam"
-      (do (tpx.ipc/reset-history! ipc)
-          (jam.tpx/join jam jam-data)
-          (is (= (tpx.ipc/get-history ipc) [[:sip/call "tpx2@void1.songpark.com"]]))))
+      (do (tpx.ipc/reset-history! ipc1)
+          (jam.tpx/join tpx1 jam-data)
+          (is (= @(:data tpx1) (assoc jam-data :state :jam/joined)))))
 
-    (testing "Join and leave jam"
-      (do (tpx.ipc/reset-history! ipc)
-          (jam.tpx/join jam jam-data)
-          (jam.tpx/leave jam)
-          (is (= (tpx.ipc/get-history ipc) [[:sip/call "tpx2@void1.songpark.com"]
-                                            [:jam/stop-coredump true]
-                                            [:sip/hangup "tpx2@void1.songpark.com"]]))))
+    (testing "Receive call"
+      (do (tpx.ipc/reset-history! ipc1)
+          (jam.tpx/join tpx1 jam-data)
+          (jam.tpx/receive-call tpx1)
+          (is (= (tpx.ipc/get-history ipc1) [[:call/receive (assoc tp2-data :teleporter/port jam.tpx/port)]]))))
 
-    (testing "Full call"
-      (do (tpx.ipc/reset-history! ipc)
-          (jam.tpx/join jam jam-data)
-          (fake-command ipc :sip/making-call 0)
-          (fake-command ipc :sip/calling 0)
-          (fake-command ipc :sip/in-call 0)
-          (fake-command ipc :stream/connecting 0)
-          (fake-command ipc :stream/syncing 0)
-          (fake-command ipc :stream/streaming 0)
-          (jam.tpx/leave jam)
-          (is (= (tpx.ipc/get-history ipc) [[:sip/call "tpx2@void1.songpark.com"]
-                                            [:sip/making-call 0]
-                                            [:sip/calling 0]
-                                            [:sip/in-call 0]
-                                            [:stream/connecting 0]
-                                            [:stream/syncing 0]
-                                            [:stream/streaming 0]
-                                            [:jam/stop-coredump true]
-                                            [:sip/hangup "tpx2@void1.songpark.com"]]))))
+    (testing "Initiate call"
+      (do (Thread/sleep 2000) ;; let the mqtt message from before arrive
+          (tpx.ipc/reset-history! ipc2)
+          (jam.tpx/join tpx2 jam-data)
+          (jam.tpx/initiate-call tpx2)
+          (is (= (tpx.ipc/get-history ipc2) [[:call/initiate (assoc tp1-data :teleporter/port jam.tpx/port)]]))))
 
-    (testing "Incoming call"
-      (do (tpx.ipc/reset-history! ipc)
-          (jam.tpx/join jam jam-data)
-          (fake-command ipc :sip/incoming-call 0)
-          (fake-command ipc :sip/in-call 0)
-          (fake-command ipc :stream/connecting 0)
-          (fake-command ipc :stream/syncing 0)
-          (fake-command ipc :stream/streaming 0)
-          (jam.tpx/leave jam)
-          (is (= (tpx.ipc/get-history ipc) [[:sip/call "tpx2@void1.songpark.com"]
-                                            [:sip/incoming-call 0]
-                                            [:sip/in-call 0]
-                                            [:stream/connecting 0]
-                                            [:stream/syncing 0]
-                                            [:stream/streaming 0]
-                                            [:jam/stop-coredump true]
-                                            [:sip/hangup "tpx2@void1.songpark.com"]]))))
+    (testing "Full call, happy path"
+      (do (tpx.ipc/reset-history! ipc1)
+          (tpx.ipc/reset-history! ipc2)
+          (jam.tpx/join tpx1 jam-data)
+          (jam.tpx/join tpx2 jam-data)
+          (jam.tpx/start-call tpx1)
+          (Thread/sleep 1000)
+          (jam.tpx/start-call tpx2)
+          (jam.tpx/stop-call tpx1)
+          (jam.tpx/stop-call tpx2)
 
-    (testing "Left"
-      (do (tpx.ipc/reset-history! ipc)
-          (jam.tpx/join jam jam-data)
-          (fake-command ipc :sip/incoming-call 0)
-          (fake-command ipc :sip/in-call 0)
-          (fake-command ipc :stream/connecting 0)
-          (fake-command ipc :stream/syncing 0)
-          (fake-command ipc :stream/streaming 0)
-          (jam.tpx/leave jam)
-          (fake-command ipc :sip/call-ended 0)
-          (fake-command ipc :stream/stopped 0)
-          (is (= (tpx.ipc/get-history ipc) [[:sip/call "tpx2@void1.songpark.com"]
-                                            [:sip/incoming-call 0]
-                                            [:sip/in-call 0]
-                                            [:stream/connecting 0]
-                                            [:stream/syncing 0]
-                                            [:stream/streaming 0]
-                                            [:jam/stop-coredump true]
-                                            [:sip/hangup "tpx2@void1.songpark.com"]
-                                            [:sip/call-ended 0]
-                                            [:stream/stopped 0]]))))
+          (do (is (= (tpx.ipc/get-history ipc1) [[:call/receive (assoc tp2-data :teleporter/port jam.tpx/port)]
+                                              [:jam/stop-coredump true]
+                                                 [:call/stop true]]))
+              (is (= (tpx.ipc/get-history ipc2) [[:call/initiate (assoc tp1-data :teleporter/port jam.tpx/port)]
+                                                 [:jam/stop-coredump true]
+                                                 [:call/stop true]])))))
 
-
-
-    (component/stop jam)
-    (component/stop ipc)
-    (stop @client)))
+    (component/stop tpx1)
+    (component/stop tpx2)
+    (component/stop ipc1)
+    (component/stop ipc2)
+    (stop @client1)
+    (stop @client2)))

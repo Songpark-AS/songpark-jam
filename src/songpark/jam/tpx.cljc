@@ -6,80 +6,34 @@
             [songpark.jam.util :as jam.util]
             [taoensso.timbre :as log]))
 
-(declare set-state)
+(def port 8421)
+
 
 (defprotocol IJamTPX
-  (join [component jam-data])
-  (leave [component])
-  (get-state [component]))
+  (join [component jam-data] "Join a jam")
+  (start-call [component] "Start a call")
+  (initiate-call [compontent] "Initiate a call as a caller")
+  (receive-call [component] "Wait for a call as a receiver")
+  (stop-call [component] "Stop the call")
+  (cancel-call [component] "Cancel the jam. For when things have timed out")
+  (reset [component] "Reset the TPX to its default state")
+  (get-state [component] "Get the current state")
+  (set-state [component value] "Set the current state"))
 
-(defn- update-jam-teleporter [jam tpid what status]
-  (swap! (:data jam) assoc-in [:jam/teleporters tpid what] status))
-(defn- clear-jam-teleporters [jam]
-  (swap! (:data jam) assoc :jam/teleporters {}))
+(defn- update-jam-teleporter [tpx tpid what status]
+  (swap! (:data tpx) assoc-in [:jam/teleporters tpid what] status))
 
-(defn- get-call-order [tp-id join-order sips]
-  (let [indexed-join-order (map vector join-order (range))
-        starting-position (reduce (fn [_ [id idx]]
-                                    (if (= tp-id id)
-                                      (reduced idx)
-                                      nil))
-                                  nil indexed-join-order)
-        sips-in-order (map #(get sips %) join-order)
-        [_ sips] (if-not (empty? sips-in-order)
-                   (split-at (inc starting-position) sips-in-order)
-                   [nil []])
-        sips-in-order (map #(get sips %) join-order)]
-    sips))
+(defn- clear-jam-teleporters [tpx]
+  (swap! (:data tpx) assoc :jam/teleporters {}))
 
-(defn- jam-join [ipc join-order]
-  (log/debug :jam-join {:join-order join-order})
-  (doseq [sip join-order]
-    (tpx.ipc/command ipc :sip/call sip)))
+(defn idle?
+  "Is the TPX idle?"
+  [tpx]
+  (= :idle (get-state tpx)))
 
-(defn- jam-leave [ipc leave-order]
-  (log/debug :jam-leave {:leave-order leave-order})
-  (tpx.ipc/command ipc :jam/stop-coredump true)
-  (doseq [sip leave-order]
-    (tpx.ipc/command ipc :sip/hangup sip)))
-
-
-(defn- join* [{:keys [tp-id data mqtt-client ipc] :as jam} jam-data]
-  (reset! data (select-keys jam-data [:jam/sip :jam/members :jam/id]))
-  (set-state jam :jam/joined)
-  (let [topics (jam.util/get-jam-topic-subscriptions :teleporter jam-data tp-id)
-        join-order (get-call-order tp-id (:jam/members jam-data) (:jam/sip jam-data))]
-    (mqtt/subscribe mqtt-client topics)
-    (jam-join ipc join-order)))
-
-(defn- leave* [{:keys [data tp-id mqtt-client ipc] :as jam}]
-  (let [jam-data @data
-        topic (jam.util/get-jam-topic :jam jam-data)
-        topics (jam.util/get-jam-topic-subscriptions :teleporter jam-data tp-id)
-        leave-order (get-call-order tp-id (:jam/members jam-data) (:jam/sip jam-data))]
-    (mqtt/publish mqtt-client topic {:message/type :jam.teleporter/leaving
-                                     :teleporter/id tp-id})
-    (jam-leave ipc leave-order)
-    (mqtt/unsubscribe mqtt-client (keys topics))
-    (set-state jam :idle)))
-
-(defn- get-state* [jam]
-  (-> jam :data deref :state))
-
-(defn- set-state [{:keys [data] :as _jam} value]
-  (swap! data assoc :state value))
-
-(defn- jam-status
-  ([{:keys [data] :as _jam}]
-   (:jam/status @data))
-  ([{:keys [data] :as _jam} status]
-   (swap! data assoc :jam/status status)))
-
-(defn idle? [jam]
-  (= :idle (get-state jam)))
-
-(defn jamming? [jam]
-  (#{:sip/making-call
+(defn jamming? [tpx]
+  (#{:jam/joined
+     :sip/making-call
      :sip/call
      :sip/in-call
      :sip/calling
@@ -91,16 +45,115 @@
      :sync/synced
      :stream/streaming
      :stream/stopped
-     :stream/broken} (get-state jam)))
+     :stream/broken} (get-state tpx)))
 
-(defn state? [jam state]
-  (= state (get-state jam)))
+(defn state?
+  "Is the TPX in this state?"
+  [tpx state]
+  (= state (get-state tpx)))
 
-(defn states? [jam states]
-  ((set states) (get-state jam)))
+(defn- get-receive-order [{:keys [data tp-id] :as _tpx}]
+  (->> (:jam/members @data)
+       (drop-while #(not= tp-id (:teleporter/id %)))
+       (drop 1)))
+
+(defn- get-initiate-order [{:keys [data tp-id] :as _tpx}]
+  (->> (:jam/members @data)
+       (take-while #(not= tp-id (:teleporter/id %)))))
+
+(comment
+
+  (get-receive-order {:data (atom {:jam/members [{:teleporter/id 1}
+                                                 {:teleporter/id 2}
+                                                 {:teleporter/id 3}]})
+                      :tp-id 1})
+  (get-initiate-order {:data (atom {:jam/members [{:teleporter/id 1}
+                                                  {:teleporter/id 2}
+                                                  {:teleporter/id 3}]})
+                       :tp-id 2})
+  )
+
+
+
+;; (defn- jam-join [ipc join-order]
+;;   (log/debug :jam-join {:join-order join-order})
+;;   (doseq [sip join-order]
+;;     (tpx.ipc/command ipc :sip/call sip)))
+
+;; (defn- jam-leave [ipc leave-order]
+;;   (log/debug :jam-leave {:leave-order leave-order})
+;;   (tpx.ipc/command ipc :jam/stop-coredump true)
+;;   (doseq [sip leave-order]
+;;     (tpx.ipc/command ipc :sip/hangup sip)))
+
+(defn- join* [{:keys [tp-id data mqtt-client ipc] :as tpx} jam-data]
+  (if (idle? tpx)
+    (do
+      (reset! data (select-keys jam-data [:jam/members :jam/id]))
+      (set-state tpx :jam/joined)
+      (mqtt/publish mqtt-client
+                    "platform/request"
+                    {:message/type :jam/joined
+                     :teleporter/id tp-id
+                     :jam/id (:jam/id jam-data)}))
+    (mqtt/publish mqtt-client
+                  (jam.util/get-jam-topic (:jam/id jam-data))
+                  {:message/type :jam.teleporter/error
+                   :teleporter/id tp-id
+                   :jam/id (:jam/id jam-data)
+                   :teleporter/state (get-state tpx)
+                   :error/key :jam.join.error/tpx-not-idle})))
+
+(defn- start-call* [tpx]
+  (receive-call tpx))
+
+(defn- initiate-call* [{:keys [data ipc] :as tpx}]
+  (let [tps (get-initiate-order tpx)]
+    (doseq [tp tps]
+      (tpx.ipc/command ipc :call/initiate (assoc tp :teleporter/port port)))))
+
+(defn- receive-call* [{:keys [data ipc mqtt-client tp-id] :as tpx}]
+  (let [jam-id (get @data :jam/id)
+        tps (get-receive-order tpx)]
+    (doseq [{:keys [teleporter/id] :as tp} tps]
+      (tpx.ipc/command ipc :call/receive (assoc tp :teleporter/port port))
+      (mqtt/publish mqtt-client id {:message/type :jam.call/receive
+                                    :jam/id jam-id
+                                    :teleporter/id tp-id
+                                    :teleporter/port port}))))
+
+(defn- stop-call* [{:keys [data tp-id mqtt-client ipc] :as tpx}]
+  (tpx.ipc/command ipc :jam/stop-coredump true)
+  (tpx.ipc/command ipc :call/stop true)
+  (mqtt/publish mqtt-client "platform/request"
+                {:message/type :jam/left
+                 :teleporter/id tp-id
+                 :jam/id (:jam/id @data)})
+  (reset! data nil)
+  (set-state tpx :idle))
+
+(defn- reset* [{:keys [tp-id mqtt-client ipc data] :as tpx}]
+  (tpx.ipc/command ipc :hangup/all true)
+  (mqtt/publish mqtt-client "platform/request"
+                {:message/type :teleporter/reset-success
+                 :teleporter/id tp-id})
+  (reset! data nil)
+  (set-state tpx :idle))
+
+(defn- get-state* [jam]
+  (-> jam :data deref :state))
+
+(defn- set-state* [{:keys [data] :as _jam} value]
+  (swap! data assoc :state value))
+
+(defn- jam-status
+  ([{:keys [data] :as _jam}]
+   (:jam/status @data))
+  ([{:keys [data] :as _jam} status]
+   (swap! data assoc :jam/status status)))
 
 (defn- broadcast-to-jam [{:keys [mqtt-client data] :as _jam} msg]
-  (let [topic (jam.util/get-jam-topic :jam @data)]
+  (let [topic (jam.util/get-jam-topic (:jam/id @data))]
     (mqtt/publish mqtt-client topic msg)))
 
 (defn- get-other-teleporter-id [{:keys [tp-id data] :as _jam}]
@@ -111,29 +164,29 @@
     (disj $ tp-id)
     (first $)))
 
-(defn- broadcast-jam-status [{:keys [data tp-id] :as jam}]
+(defn- broadcast-jam-status [{:keys [data tp-id] :as tpx}]
   (let [msg (merge (select-keys @data [:jam/teleporters])
                    {:message/type :jam.teleporter/status
                     :teleporter/id tp-id})]
-    (broadcast-to-jam jam msg)
-    (when-not (jamming? jam)
+    (broadcast-to-jam tpx msg)
+    (when-not (jamming? tpx)
       (log/error "Trying to broadcast to a jam when not in a jam" msg))))
 
-(defn- platform-left [{:keys [mqtt-client tp-id data] :as jam} status]
-  (let [jam-id (:jam/id @data)
-        msg (case status
-              :sip/call-ended
-              {:message/type :jam.teleporter/left
-               :jam.teleporter.status/sip :sip/call-ended
-               :teleporter/id tp-id
-               :jam/id jam-id}
-              :stream/stopped
-              {:message/type :jam.teleporter/left
-               :jam.teleporter.status/stream :stream/stopped
-               :teleporter/id tp-id
-               :jam/id jam-id})
-        topic (jam.util/get-jam-topic :platform {:jam/id jam-id})]
-    (mqtt/publish mqtt-client topic msg)))
+;; (defn- platform-left [{:keys [mqtt-client tp-id data] :as tpx} status]
+;;   (let [jam-id (:jam/id @data)
+;;         msg (case status
+;;               :sip/call-ended
+;;               {:message/type :jam/left
+;;                :jam.teleporter.status/sip :sip/call-ended
+;;                :teleporter/id tp-id
+;;                :jam/id jam-id}
+;;               :stream/stopped
+;;               {:message/type :jam/left
+;;                :jam.teleporter.status/stream :stream/stopped
+;;                :teleporter/id tp-id
+;;                :jam/id jam-id})
+;;         topic (jam.util/get-jam-topic :platform {:jam/id jam-id})]
+;;     (mqtt/publish mqtt-client topic msg)))
 
 (defn- handle-ipc-value
   "Handles outgoing IPC values only. Commands are handled seperately"
@@ -142,45 +195,45 @@
    {:keys [event/type event/value] :as v}]
   (log/debug :handle-ipc-value v)
   (case type
-    :sip/making-call
-    (do
-      (set-state jam type)
-      (let [other-tp-id (get-other-teleporter-id jam)]
-        (update-jam-teleporter jam other-tp-id :sip type)
-        (broadcast-jam-status jam)))
-    :sip/calling
-    (do
-      (set-state jam type)
-      (let [other-tp-id (get-other-teleporter-id jam)]
-        (update-jam-teleporter jam other-tp-id :sip type)
-        (broadcast-jam-status jam)))
-    :sip/incoming-call
-    (do
-      (set-state jam type)
-      (let [other-tp-id (get-other-teleporter-id jam)]
-        (update-jam-teleporter jam other-tp-id :sip type)
-        (broadcast-jam-status jam)))
-    :sip/error
-    (do
-      (set-state jam type)
-      (let [other-tp-id (get-other-teleporter-id jam)]
-        (update-jam-teleporter jam other-tp-id :sip type)
-        (update-jam-teleporter jam other-tp-id type value)
-        (broadcast-jam-status jam)))
-    :sip/in-call
-    (do
-      (set-state jam type)
-      (let [other-tp-id (get-other-teleporter-id jam)]
-        (update-jam-teleporter jam other-tp-id :sip type)
-        (broadcast-jam-status jam)))
-    :sip/call-ended
-    (do
-      (set-state jam type)
-      (let [other-tp-id (get-other-teleporter-id jam)]
-        (update-jam-teleporter jam other-tp-id :sip type)
-        (broadcast-jam-status jam)
-        ;; inform the platform that the TP has left the jam on the SIP front
-        (platform-left jam type)))
+    ;; :sip/making-call
+    ;; (do
+    ;;   (set-state jam type)
+    ;;   (let [other-tp-id (get-other-teleporter-id jam)]
+    ;;     (update-jam-teleporter jam other-tp-id :sip type)
+    ;;     (broadcast-jam-status jam)))
+    ;; :sip/calling
+    ;; (do
+    ;;   (set-state jam type)
+    ;;   (let [other-tp-id (get-other-teleporter-id jam)]
+    ;;     (update-jam-teleporter jam other-tp-id :sip type)
+    ;;     (broadcast-jam-status jam)))
+    ;; :sip/incoming-call
+    ;; (do
+    ;;   (set-state jam type)
+    ;;   (let [other-tp-id (get-other-teleporter-id jam)]
+    ;;     (update-jam-teleporter jam other-tp-id :sip type)
+    ;;     (broadcast-jam-status jam)))
+    ;; :sip/error
+    ;; (do
+    ;;   (set-state jam type)
+    ;;   (let [other-tp-id (get-other-teleporter-id jam)]
+    ;;     (update-jam-teleporter jam other-tp-id :sip type)
+    ;;     (update-jam-teleporter jam other-tp-id type value)
+    ;;     (broadcast-jam-status jam)))
+    ;; :sip/in-call
+    ;; (do
+    ;;   (set-state jam type)
+    ;;   (let [other-tp-id (get-other-teleporter-id jam)]
+    ;;     (update-jam-teleporter jam other-tp-id :sip type)
+    ;;     (broadcast-jam-status jam)))
+    ;; :sip/call-ended
+    ;; (do
+    ;;   (set-state jam type)
+    ;;   (let [other-tp-id (get-other-teleporter-id jam)]
+    ;;     (update-jam-teleporter jam other-tp-id :sip type)
+    ;;     (broadcast-jam-status jam)
+    ;;     ;; inform the platform that the TP has left the jam on the SIP front
+    ;;     (platform-left jam type)))
     :sync/syncing
     (do
       (set-state jam type)
@@ -231,7 +284,7 @@
 
     (log/error "Event type" v "not handled" v)))
 
-(defn- handle-ipc [{:keys [ipc] :as jam}]
+(defn- handle-ipc [{:keys [ipc] :as tpx}]
   (let [c (:c ipc)
         closer (async/chan)]
     (async/go-loop []
@@ -245,7 +298,7 @@
             (when v
               (log/debug "Handling IPC value" v)
               (try
-                (handle-ipc-value jam v)
+                (handle-ipc-value tpx v)
                 (catch Exception e
                   (log/error "Caught exception in handle-ipc" {:exception e
                                                                :v v
@@ -254,7 +307,7 @@
             (recur)))))
     closer))
 
-(defrecord Jam [started? tp-id data mqtt-client ipc closer-chan]
+(defrecord TPXJam [started? tp-id data mqtt-client ipc closer-chan]
   component/Lifecycle
   (start [this]
     (if started?
@@ -265,7 +318,9 @@
                                 :data (atom {:state :idle
                                              ;; data about the jam
                                              :#jam {:id #uuid "00000000-0000-0000-0000-000000000000"
-                                                    :teleporters {:tp-id-other-or-own {:sip #{:sip/call :sip/in-call :sip/hungup}
+                                                    :teleporters {:tp-id-other-or-own {:teleporter/id #uuid "00000000-0000-0000-0000-000000000000"
+                                                                                       :teleporter/ip "10.100.200.104"
+                                                                                       :call #{:call/limbo :call/receiving :call/calling :call/hangup :call/in-call :call/ended}
                                                                                        :stream #{:stream/broken :stream/streaming}
                                                                                        :sync #{:sync/syncing :sync/sync-failed}}}}}))
                 closer-chan (handle-ipc new-this)]
@@ -284,10 +339,20 @@
   IJamTPX
   (join [this jam-data]
     (join* this jam-data))
-  (leave [this]
-    (leave* this))
+  (start-call [this]
+    (start-call* this))
+  (initiate-call [this]
+    (initiate-call* this))
+  (receive-call [this]
+    (receive-call* this))
+  (stop-call [this]
+    (stop-call* this))
+  (reset [this]
+    (reset* this))
   (get-state [this]
-    (get-state* this)))
+    (get-state* this))
+  (set-state [this value]
+    (set-state* this value)))
 
 (defn get-jam [settings]
-  (map->Jam settings))
+  (map->TPXJam settings))

@@ -1,4 +1,4 @@
-(defproject songpark/jam "1.0.4-SNAPSHOT"
+(defproject songpark/jam "2.0.0-SNAPSHOT"
 
   :dependencies [[org.clojure/clojure "1.10.3"]
                  ;; structure
@@ -7,7 +7,7 @@
                  [com.taoensso/timbre "5.1.2" :scope "provided"]
 
                  ;; MQTT library
-                 [songpark/mqtt "1.0.3" :scope "provided"]
+                 [songpark/mqtt "1.0.4-SNAPSHOT" :scope "provided"]
 
                  ;; core async. used for TPX IPC/Jam bindings
                  [org.clojure/core.async "1.5.648"]]
