@@ -61,19 +61,8 @@
   )
 
 
-
-;; (defn- jam-join [ipc join-order]
-;;   (log/debug :jam-join {:join-order join-order})
-;;   (doseq [sip join-order]
-;;     (tpx.ipc/command ipc :sip/call sip)))
-
-;; (defn- jam-leave [ipc leave-order]
-;;   (log/debug :jam-leave {:leave-order leave-order})
-;;   (tpx.ipc/command ipc :jam/stop-coredump true)
-;;   (doseq [sip leave-order]
-;;     (tpx.ipc/command ipc :sip/hangup sip)))
-
 (defn- join* [{:keys [tp-id data mqtt-client ipc] :as tpx} jam-data]
+  (log/info "Joining jam" (:jam/id jam-data))
   (if (idle? tpx)
     (do
       (reset! data (select-keys jam-data [:jam/members :jam/id]))
@@ -91,18 +80,22 @@
                    :teleporter/state (get-state tpx)
                    :error/key :jam.join.error/tpx-not-idle})))
 
-(defn- start-call* [tpx]
+(defn- start-call* [{:keys [data] :as tpx}]
+  (log/info "Starting call for jam" (:jam/id @data))
   (receive-call tpx))
 
 (defn- initiate-call* [{:keys [data ipc] :as tpx}]
-  (let [tps (get-initiate-order tpx)]
-    (doseq [tp tps]
+  (let [tps (get-initiate-order tpx)
+        jam-id (:jam/id @data)]
+    (doseq [{:keys [teleporter/id] :as tp} tps]
+      (log/info "Initating call to teleporter" id "for jam" jam-id)
       (tpx.ipc/command ipc :call/initiate (assoc tp :teleporter/port port)))))
 
 (defn- receive-call* [{:keys [data ipc mqtt-client tp-id] :as tpx}]
   (let [jam-id (get @data :jam/id)
         tps (get-receive-order tpx)]
     (doseq [{:keys [teleporter/id] :as tp} tps]
+      (log/info "Receiving call from teleporter" id "for jam" jam-id)
       (tpx.ipc/command ipc :call/receive (assoc tp :teleporter/port port))
       (mqtt/publish mqtt-client id {:message/type :jam.call/receive
                                     :jam/id jam-id
@@ -110,6 +103,7 @@
                                     :teleporter/port port}))))
 
 (defn- stop-call* [{:keys [data tp-id mqtt-client ipc] :as tpx}]
+  (log/info "Stopping call for jam " (:jam/id @data))
   (tpx.ipc/command ipc :jam/stop-coredump true)
   (tpx.ipc/command ipc :call/stop true)
   (mqtt/publish mqtt-client "platform/request"
@@ -120,6 +114,7 @@
   (set-state tpx :idle))
 
 (defn- reset* [{:keys [tp-id mqtt-client ipc data] :as tpx}]
+  (log/info "Resetting teleporter")
   (tpx.ipc/command ipc :hangup/all true)
   (mqtt/publish mqtt-client "platform/request"
                 {:message/type :teleporter/reset-success
@@ -153,29 +148,40 @@
     (when-not (jamming? tpx)
       (log/error "Trying to broadcast to a jam when not in a jam" msg))))
 
+(defn- message-platform [{:keys [data tp-id mqtt-client] :as tpx} v]
+  (let [msg (assoc v
+                   :message/type :jam/event
+                   :jam/id (:jam/id @data)
+                   :teleporter/id tp-id)]
+    (mqtt/publish mqtt-client "platform/request" msg)))
+
+
 (defn- handle-ipc-value
   "Handles outgoing IPC values only. Commands are handled seperately"
   ;;  commands are handled in the implementation details of the TPX codebase
-  [{:keys [data tp-id mqtt-client] :as jam}
+  [{:keys [data tp-id mqtt-client] :as tpx}
    {:keys [event/type event/value] :as v}]
   (log/debug :handle-ipc-value v)
   (case type
     :sync/syncing
-    (broadcast-jam-status jam v)
+    (broadcast-jam-status tpx v)
     :sync/synced
-    (broadcast-jam-status jam v)
-    :sync/sync-failed
-    (broadcast-jam-status jam v)
+    (broadcast-jam-status tpx v)
+    :sync/failed
+    (broadcast-jam-status tpx v)
+    :sync/timeout
+    (do (broadcast-jam-status tpx v)
+        (message-platform tpx v))
     :sync/responded
-    (broadcast-jam-status jam v)
+    (broadcast-jam-status tpx v)
     :stream/streaming
-    (broadcast-jam-status jam v)
+    (broadcast-jam-status tpx v)
     :stream/broken
-    (broadcast-jam-status jam v)
+    (broadcast-jam-status tpx v)
     :stream/stopped
-    (broadcast-jam-status jam v)
+    (broadcast-jam-status tpx v)
     :jam/coredump
-    (broadcast-to-jam jam {:message/type :jam.teleporter/coredump
+    (broadcast-to-jam tpx {:message/type :jam.teleporter/coredump
                            :jam/coredump value
                            :teleporter/id tp-id})
 

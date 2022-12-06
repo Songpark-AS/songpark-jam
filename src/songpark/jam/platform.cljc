@@ -14,6 +14,7 @@
   (stop [platform jam-id] "Stop the jam")
   (joined [platform jam-id teleporter-id])
   (left [platform jam-id teleporter-id])
+  (timed-out [platform jam-id teleporter-id])
   (check-for-timeouts [platform] "Check if any jams have timed out after trying to stop them"))
 
 (defn dissoc-in
@@ -122,7 +123,19 @@
       (when (every? :jam/left? members)
         (proto/delete-db db [:jams jam-id])))))
 
-(defn- check-for-timeouts* [{:keys [db mqtt-client timeout-ms-jam-eol]}]
+(defn- time-out! [{:keys [db mqtt-client]} jam-id]
+  (let [{:keys [jam/members]} (proto/read-db db [:jams jam-id])]
+    (doseq [{tp-id :teleporter/id} members]
+      (mqtt/publish mqtt-client tp-id {:message/type :jam.cmd/reset
+                                       :teleporter/id tp-id}))
+    ;; delete jam
+    (proto/delete-db db [:jams jam-id])))
+
+(defn- timed-out* [{:keys [db mqtt-client] :as jam-manager} jam-id teleporter-id]
+  (log/info "Teleporter" teleporter-id "timed out from jam" jam-id)
+  (time-out! jam-manager jam-id))
+
+(defn- check-for-timeouts* [{:keys [db timeout-ms-jam-eol] :as jam-manager}]
   (let [now (t/now)
         jams-eol (->> (proto/read-db db [:jams])
                       (filter (fn [[_ {:jam/keys [status timeout]}]]
@@ -130,12 +143,8 @@
                                      (t/> now (t/>> timeout (t/new-duration timeout-ms-jam-eol :millis))))))
                       (map (fn [[jam-id jam]]
                              (assoc jam :jam/id jam-id))))]
-    (doseq [{:jam/keys [members id]} jams-eol]
-      (doseq [{tp-id :teleporter/id} members]
-        (mqtt/publish mqtt-client tp-id {:message/type :jam.cmd/reset
-                                         :teleporter/id tp-id}))
-      ;; delete jam
-      (proto/delete-db db [:jams id]))))
+    (doseq [{:jam/keys [id]} jams-eol]
+      (time-out! jam-manager id))))
 
 (defrecord JamManager [started? db mqtt-client timeout-ms-waiting timeout-ms-jam-eol]
   component/Lifecycle
@@ -160,11 +169,15 @@
     (joined* this jam-id teleporter-id))
   (left [this jam-id teleporter-id]
     (left* this jam-id teleporter-id))
+  (timed-out [this jam-id teleporter-id]
+    (timed-out* this jam-id teleporter-id))
   (check-for-timeouts [this]
     (check-for-timeouts* this)))
 
 (defn jam-manager [settings]
   (map->JamManager (merge {:db (mem-db)
-                           ;; 15 seconds
-                           :timeout-ms-jam-eol (* 15 1000)}
+                           ;; 40 seconds
+                           ;; Thanks' layer should be 40 seconds, so this is for
+                           ;; additional cleanup duty
+                           :timeout-ms-jam-eol (* 45 1000)}
                           settings)))
