@@ -10,7 +10,7 @@
             [tick.core :as t]))
 
 (defprotocol IJamPlatform
-  (start [platform tp-ids] "Start a jam with the teleporters")
+  (start [platform tp-ids] [platform jam-id tp-ids] "Start a jam with the teleporters")
   (stop [platform jam-id] "Stop the jam")
   (joined [platform jam-id teleporter-id])
   (left [platform jam-id teleporter-id])
@@ -60,9 +60,8 @@
   ([data]
    (map->MemDB {:kv-map (atom data)})))
 
-(defn- setup-jam! [db mqtt-client tp-ids]
-  (let [jam-id (get-id)
-        teleporters (proto/read-db db [:teleporter])
+(defn- setup-jam! [db mqtt-client jam-id tp-ids]
+  (let [teleporters (proto/read-db db [:teleporter])
         members (as-> teleporters $
                   (select-keys $ tp-ids)
                   (vals $)
@@ -77,9 +76,10 @@
                   (select-keys [:jam/id :jam/members])
                   (assoc :message/type :jam.cmd/join))]
       (doseq [{:keys [teleporter/id]} members]
-        (mqtt/publish mqtt-client id msg)))))
+        (mqtt/publish mqtt-client id msg))))
+  jam-id)
 
-(defn- start* [{:keys [db mqtt-client]} tp-ids]
+(defn- start* [{:keys [db mqtt-client]} jam-id tp-ids]
   (let [jams (proto/read-db db [:jams])
         tp-ids (set tp-ids)
         jamming? (->> jams
@@ -88,7 +88,7 @@
                       first)]
     (if jamming?
       (throw (ex-info "At least one of the teleporters are already jamming" {:tp-ids tp-ids}))
-      (setup-jam! db mqtt-client tp-ids))))
+      (setup-jam! db mqtt-client jam-id tp-ids))))
 
 (defn- stop* [{:keys [db mqtt-client]} jam-id]
   (let [{:keys [jam/members]} (proto/read-db db [:jams jam-id])
@@ -162,7 +162,9 @@
                  :started? false))))
   IJamPlatform
   (start [this tp-ids]
-    (start* this tp-ids))
+    (start* this (get-id) tp-ids))
+  (start [this jam-id tp-ids]
+    (start* this jam-id tp-ids))
   (stop [this jam-id]
     (stop* this jam-id))
   (joined [this jam-id teleporter-id]
