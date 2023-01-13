@@ -174,6 +174,8 @@
         (message-platform tpx v))
     :sync/responded
     (broadcast-jam-status tpx v)
+    :sync/end
+    (broadcast-jam-status tpx v)
     :stream/streaming
     (broadcast-jam-status tpx v)
     :stream/broken
