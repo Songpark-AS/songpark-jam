@@ -1,6 +1,7 @@
 (ns songpark.tpx-jam-test
   (:require [clojure.test :refer :all]
             [com.stuartsierra.component :as component]
+            [songpark.jam.platform :refer [generate-port]]
             [songpark.jam.tpx :as jam.tpx]
             [songpark.jam.tpx.handler]
             [songpark.jam.tpx.ipc :as tpx.ipc]
@@ -18,6 +19,7 @@
 (deftest tpx-jam
   (let [client1 (atom nil)
         client2 (atom nil)
+        jam-port (generate-port)
 
         tp1-data {:teleporter/id tp-id1
                   :teleporter/local-ip "10.100.200.10"
@@ -38,7 +40,8 @@
                                                 :ipc ipc2
                                                 :mqtt-client @client2}))
         jam-data {:jam/members members
-                  :jam/id "myjamid"}]
+                  :jam/id "myjamid"
+                  :jam/port jam-port}]
 
     (mqtt/add-injection @client1 :tpx tpx1)
     (mqtt/add-injection @client2 :tpx tpx2)
@@ -54,7 +57,7 @@
           (reset-to-idle! tpx1)
           (jam.tpx/join tpx1 jam-data)
           (jam.tpx/receive-call tpx1)
-          (is (= (tpx.ipc/get-history ipc1) [[:call/receive (assoc tp2-data :teleporter/port jam.tpx/port)]]))))
+          (is (= (tpx.ipc/get-history ipc1) [[:call/receive (assoc tp2-data :teleporter/port jam-port)]]))))
 
     (testing "Initiate call"
       (do (reset-to-idle! tpx1)
@@ -65,7 +68,7 @@
           (Thread/sleep 2000) ;; let the mqtt message from before arrive
           (jam.tpx/join tpx2 jam-data)
           (jam.tpx/initiate-call tpx2)
-          (is (= (tpx.ipc/get-history ipc2) [[:call/initiate (assoc tp1-data :teleporter/port jam.tpx/port)]]))))
+          (is (= (tpx.ipc/get-history ipc2) [[:call/initiate (assoc tp1-data :teleporter/port jam-port)]]))))
 
     (testing "Full call, happy path"
       (do (reset-to-idle! tpx1)
@@ -80,10 +83,10 @@
           (jam.tpx/stop-call tpx1)
           (jam.tpx/stop-call tpx2)
 
-          (do (is (= (tpx.ipc/get-history ipc1) [[:call/receive (assoc tp2-data :teleporter/port jam.tpx/port)]
+          (do (is (= (tpx.ipc/get-history ipc1) [[:call/receive (assoc tp2-data :teleporter/port jam-port)]
                                               [:jam/stop-coredump true]
                                                  [:call/stop true]]))
-              (is (= (tpx.ipc/get-history ipc2) [[:call/initiate (assoc tp1-data :teleporter/port jam.tpx/port)]
+              (is (= (tpx.ipc/get-history ipc2) [[:call/initiate (assoc tp1-data :teleporter/port jam-port)]
                                                  [:jam/stop-coredump true]
                                                  [:call/stop true]])))))
 

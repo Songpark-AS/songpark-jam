@@ -19,6 +19,10 @@
             [taoensso.timbre :as log]))
 
 
+(defn- get-jam-port [db]
+  (let [jam-id (->> (proto/read-db db [:jams])
+                    ffirst)]
+    (proto/read-db db [:jams jam-id :jam/port])))
 
 
 (deftest full-jam
@@ -48,7 +52,7 @@
                              :teleporter/public-ip "10.100.200.40"}}
 
         _ (proto/write-db db [:teleporter] teleporters)
-        _ (proto/write-db db [:jam] {})
+        _ (proto/write-db db [:jams] {})
 
         _ (mqtt/add-injection @client-platform :jam-manager jam-manager)
 
@@ -75,7 +79,8 @@
                                                 :ipc ipc2
                                                 :mqtt-client @client-tpx2}))
         _ (mqtt/add-injection @client-tpx1 :tpx tpx1)
-        _ (mqtt/add-injection @client-tpx2 :tpx tpx2)]
+        _ (mqtt/add-injection @client-tpx2 :tpx tpx2)
+        jam-port (atom nil)]
 
     (log/debug ::state (jam.tpx/get-state tpx1))
 
@@ -86,16 +91,17 @@
       (testing "Jam has started"
         (jam.platform/start jam-manager [tp-id1 tp-id2])
         (let [jams (proto/read-db db [:jams])]
+          (reset! jam-port (get-jam-port db))
           (is (not (empty? jams)))))
 
       (testing "Teleporter 1 is receiving"
         (Thread/sleep 2000)
         (is (= (tpx.ipc/get-history ipc1)
-               [[:call/receive (assoc tp2-data :teleporter/port jam.tpx/port)]])))
+               [[:call/receive (assoc tp2-data :teleporter/port @jam-port)]])))
       (testing "Teleporter 2 is calling"
         (Thread/sleep 2000)
         (is (= (tpx.ipc/get-history ipc2)
-               [[:call/initiate (assoc tp1-data :teleporter/port jam.tpx/port)]])))
+               [[:call/initiate (assoc tp1-data :teleporter/port @jam-port)]])))
       (let [jam-id (->> (proto/read-db db [:jams])
                         ffirst)]
         (testing "Stopping the jam"
@@ -106,12 +112,12 @@
         (Thread/sleep 1000)
         (testing "Teleporter 1 has stopped the call"
           (is (= (tpx.ipc/get-history ipc1)
-                 [[:call/receive (assoc tp2-data :teleporter/port jam.tpx/port)]
+                 [[:call/receive (assoc tp2-data :teleporter/port @jam-port)]
                   [:jam/stop-coredump true]
                   [:call/stop true]])))
         (testing "Telporter 2 has stopped the call"
           (is (= (tpx.ipc/get-history ipc2)
-                 [[:call/initiate (assoc tp1-data :teleporter/port jam.tpx/port)]
+                 [[:call/initiate (assoc tp1-data :teleporter/port @jam-port)]
                   [:jam/stop-coredump true]
                   [:call/stop true]])))))
 

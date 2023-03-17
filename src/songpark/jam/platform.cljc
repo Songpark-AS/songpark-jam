@@ -17,6 +17,11 @@
   (timed-out [platform jam-id teleporter-id])
   (check-for-timeouts [platform] "Check if any jams have timed out after trying to stop them"))
 
+(defn generate-port
+  "Generate a random port in the range 10k-65k"
+  []
+  (+ 10000 (rand-int 55000)))
+
 (defn dissoc-in
   "Dissociate a value in a nested assocative structure, identified by a sequence
   of keys. Any collections left empty by the operation will be dissociated from
@@ -68,12 +73,17 @@
                   (map #(select-keys % [:teleporter/id :teleporter/local-ip :teleporter/public-ip]) $)
                   (sort-by :teleporter/id $)
                   (into [] $))
+        jam-port (generate-port)
         jam {:jam/id jam-id
              :jam/members members
-             :jam/status :jam/start}]
+             :jam/status :jam/start
+             :jam/port jam-port}]
     (proto/write-db db [:jams jam-id] jam)
+    (log/info "New jam setup" {:jam/port jam-port
+                               :jam/id jam-id
+                               :jam/members members})
     (let [msg (-> jam
-                  (select-keys [:jam/id :jam/members])
+                  (select-keys [:jam/id :jam/members :jam/port])
                   (assoc :message/type :jam.cmd/join))]
       (doseq [{:keys [teleporter/id]} members]
         (mqtt/publish mqtt-client id msg))))

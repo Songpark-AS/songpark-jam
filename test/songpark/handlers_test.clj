@@ -30,14 +30,16 @@
                                         :as _msg}]
   (log/debug :jam/joined (select-keys _msg [:message/type
                                             :jam/id
+                                            :jam/port
                                             :teleporter/id]))
   (jam.platform/joined jam-manager jam-id teleporter-id))
 
 (defmethod handle-message :jam/left [{:keys [jam-manager]
-                                        teleporter-id :teleporter/id
-                                        jam-id :jam/id
-                                        :as _msg}]
+                                      teleporter-id :teleporter/id
+                                      jam-id :jam/id
+                                      :as _msg}]
   (log/debug :jam/left (select-keys _msg [:message/type
-                                            :jam/id
-                                            :teleporter/id]))
+                                          :jam/id
+                                          :jam/port
+                                          :teleporter/id]))
   (jam.platform/left jam-manager jam-id teleporter-id))

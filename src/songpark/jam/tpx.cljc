@@ -6,9 +6,6 @@
             [songpark.jam.util :refer [get-jam-topic]]
             [taoensso.timbre :as log]))
 
-(def port 8421)
-
-
 (defprotocol IJamTPX
   (join [component jam-data] "Join a jam")
   (start-call [component] "Start a call")
@@ -62,16 +59,17 @@
 
 
 (defn- join* [{:keys [tp-id data mqtt-client ipc] :as tpx} jam-data]
-  (log/info "Joining jam" (:jam/id jam-data))
+  (log/info "Joining jam" (:jam/id jam-data) "on port" (:jam/port jam-data))
   (if (idle? tpx)
     (do
-      (reset! data (select-keys jam-data [:jam/members :jam/id]))
+      (reset! data (select-keys jam-data [:jam/members :jam/id :jam/port]))
       (set-state tpx :jam/joined)
       (mqtt/publish mqtt-client
                     "platform/request"
                     {:message/type :jam/joined
                      :teleporter/id tp-id
-                     :jam/id (:jam/id jam-data)}))
+                     :jam/id (:jam/id jam-data)
+                     :jam/port (:jam/port jam-data)}))
     (mqtt/publish mqtt-client
                   (get-jam-topic (:jam/id jam-data))
                   {:message/type :jam.teleporter/error
@@ -86,21 +84,23 @@
 
 (defn- initiate-call* [{:keys [data ipc] :as tpx}]
   (let [tps (get-initiate-order tpx)
-        jam-id (:jam/id @data)]
+        jam-id (:jam/id @data)
+        jam-port (:jam/port @data)]
     (doseq [{:keys [teleporter/id] :as tp} tps]
-      (log/info "Initating call to teleporter" id "for jam" jam-id)
-      (tpx.ipc/command ipc :call/initiate (assoc tp :teleporter/port port)))))
+      (log/info "Initating call to teleporter" id "for jam" jam-id "on port" jam-port)
+      (tpx.ipc/command ipc :call/initiate (assoc tp :teleporter/port jam-port)))))
 
 (defn- receive-call* [{:keys [data ipc mqtt-client tp-id] :as tpx}]
   (let [jam-id (get @data :jam/id)
-        tps (get-receive-order tpx)]
+        tps (get-receive-order tpx)
+        jam-port (:jam/port @data)]
     (doseq [{:keys [teleporter/id] :as tp} tps]
-      (log/info "Receiving call from teleporter" id "for jam" jam-id)
-      (tpx.ipc/command ipc :call/receive (assoc tp :teleporter/port port))
+      (log/info "Receiving call from teleporter" id "for jam" jam-id "on port" jam-port)
+      (tpx.ipc/command ipc :call/receive (assoc tp :teleporter/port jam-port))
       (mqtt/publish mqtt-client id {:message/type :jam.call/receive
                                     :jam/id jam-id
                                     :teleporter/id tp-id
-                                    :teleporter/port port}))))
+                                    :teleporter/port jam-port}))))
 
 (defn- stop-call* [{:keys [data tp-id mqtt-client ipc] :as tpx}]
   (log/info "Stopping call for jam " (:jam/id @data))
@@ -175,7 +175,8 @@
     :sync/responded
     (broadcast-jam-status tpx v)
     :sync/end
-    (broadcast-jam-status tpx v)
+    (do (broadcast-jam-status tpx v)
+        (message-platform tpx v))
     :stream/streaming
     (broadcast-jam-status tpx v)
     :stream/broken
