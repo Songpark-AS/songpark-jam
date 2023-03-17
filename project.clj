@@ -1,4 +1,4 @@
-(defproject songpark/jam "2.0.1-SNAPSHOT"
+(defproject songpark/jam "2.1.0-SNAPSHOT"
 
   :dependencies [[org.clojure/clojure "1.10.3"]
                  ;; structure
